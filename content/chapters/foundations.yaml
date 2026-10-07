@@ -1,0 +1,134 @@
+id: foundations
+title: Foundations
+# Answers here are short definitions, so learners can also rebuild them word by word.
+exercises: {assemble: true}
+lessons:
+  - id: tokens-and-embeddings
+    title: Tokens and embeddings
+    cards:
+      - id: what-is-a-token
+        prompt: What is a token?
+        prompt_variants:
+          - What unit of text does a language model read and write?
+        answer: A token is a word or word piece.
+        option: a word or word piece
+        distractors: [a whole sentence or clause, a full paragraph of text, a complete line of code]
+        hint: 'Think of how "unhappiness" might be split up.'
+        note: >-
+          A tokenizer keeps common words whole and splits rarer ones into pieces, so a single
+          word can cost several tokens.
+        source: Original text
+      - id: rare-word-split
+        prompt: What does a tokenizer do with a long, rare word?
+        answer: It breaks the word into several smaller tokens.
+        option: several smaller tokens
+        distractors: [one brand-new token, an unknown-word marker, its nearest synonym]
+        note: >-
+          The vocabulary is fixed before training, and subword pieces let the model spell out
+          any word, even one it has never seen.
+        source: Original text
+      - id: what-is-an-embedding
+        prompt: What is a token's embedding?
+        prompt_variants:
+          - How does a model represent a token internally?
+        answer: A token's embedding is a list of numbers.
+        option: a list of numbers
+        distractors: [a short written definition, its position in text, a compressed image file]
+        hint: Think of coordinates in a space with many dimensions.
+        note: >-
+          Each token id is mapped to a learned vector, and these numbers are what the rest of
+          the network actually computes with.
+        source: Original text
+      - id: close-embeddings
+        prompt: What does it mean when two token embeddings are close together?
+        answer: The two tokens tend to have similar meanings.
+        option: similar meanings
+        distractors: [similar spellings, opposite meanings, equal lengths]
+        note: >-
+          Training places tokens that are used in similar contexts near each other, which is
+          why "cat" ends up closer to "dog" than to "invoice".
+        source: Original text
+  - id: attention-and-transformers
+    title: Attention and transformers
+    cards:
+      - id: what-attention-does
+        prompt: Where does attention let each token draw information from?
+        answer: Each token draws information from relevant earlier tokens.
+        option: relevant earlier tokens
+        distractors: [an external database, the training labels, a separate dictionary]
+        hint: Think of how "it" in a sentence finds the noun it refers to.
+        note: >-
+          Attention scores how relevant each earlier token is to the current one and blends in
+          their information. In a text generator a token can look back, but never ahead.
+        source: Original text
+      - id: transformer-architecture
+        prompt: What kind of neural network are most modern LLMs built on?
+        answer: Most modern LLMs are built on transformer networks.
+        option: transformer networks
+        distractors: [recurrent networks, convolutional networks, Bayesian networks]
+        hint: Its name also fits a toy robot that changes shape.
+        note: >-
+          Transformers replaced step-by-step recurrent processing with attention, so every
+          position of a training text can be processed in parallel.
+        source: Original text
+      - id: feed-forward-block
+        prompt: Besides attention, what does each transformer layer contain?
+        answer: Each layer also has a feed-forward network.
+        option: a feed-forward network
+        distractors: [a grammar parser, a search index, a sorting routine]
+        note: >-
+          Attention mixes information between tokens, then the feed-forward network transforms
+          each token's vector on its own. Stacking many such layers builds richer representations.
+        source: Original text
+  - id: next-token-prediction
+    title: Predicting the next token
+    cards:
+      - id: what-a-model-predicts
+        prompt: What does a language model predict at each step?
+        prompt_variants:
+          - At each step, what is a language model trying to guess?
+        answer: It predicts the next token in the text.
+        option: the next token
+        distractors: [the whole paragraph, the previous token, the final answer]
+        hint: Think of autocomplete on a phone keyboard.
+        note: >-
+          Everything a chat model does, from answering questions to writing code, is built on
+          repeating this single prediction.
+        source: Original text
+      - id: probability-distribution
+        prompt: What does the model output for the next position?
+        answer: It outputs a probability distribution over tokens.
+        option: a probability distribution
+        distractors: [one fixed word, a confidence rating, a parse tree]
+        note: >-
+          Every token in the vocabulary gets a probability. A separate sampling step then picks
+          one of them.
+        source: Original text
+      - id: generation-loop
+        prompt: What happens to each new token the model generates?
+        answer: It is appended to the input for the next prediction.
+        option: appended to the input
+        distractors: [stored in the weights, checked against a dictionary, sent to a reviewer]
+        note: >-
+          Generation is a loop of predict, append and predict again, which is why long replies
+          take longer to produce.
+        source: Original text
+      - id: context-window
+        prompt: What is a model's context window?
+        answer: The context window is the maximum number of tokens the model can take in at once.
+        option: the maximum number of tokens
+        distractors: [the longest allowed response time, the size of training data, the number of model layers]
+        hint: Count both the prompt and the reply.
+        note: >-
+          Instructions, conversation history, attached documents and the reply all share this
+          budget. Text beyond it has to be cut or summarized.
+        source: Original text
+      - id: weights-during-chat
+        prompt: What happens to a model's weights while it chats with you?
+        answer: A model's weights stay fixed while it chats.
+        option: stay fixed
+        distractors: [update constantly, grow steadily, reset nightly]
+        note: >-
+          Learning happens only during training. In a chat the model sees earlier messages only
+          because they are sent again as part of the context.
+        source: Original text

@@ -1,0 +1,97 @@
+id: training
+title: Training
+lessons:
+  - id: pre-training
+    title: Pre-training
+    cards:
+      - id: pre-training-data
+        prompt: What does a model learn from during pre-training?
+        answer: Pre-training uses vast amounts of text, such as web pages and books.
+        option: vast amounts of text
+        distractors: [a small labeled dataset, live conversations with users, rules written by experts]
+        hint: Think of scale, a large share of the public web.
+        note: >-
+          The text supplies its own training signal. Every next token is an answer to predict,
+          so no human labeling is needed.
+        source: Original text
+      - id: what-are-parameters
+        prompt: What are a model's parameters?
+        prompt_variants:
+          - What exactly changes inside a model as it trains?
+        answer: Parameters are the numeric weights adjusted during training.
+        option: numeric weights
+        distractors: [stored documents, grammar rules, saved conversations]
+        note: >-
+          A large model has billions of them. Together they encode what it learned, but not as
+          a readable copy of the training text.
+        source: Original text
+      - id: gradient-descent
+        prompt: Which method adjusts the weights to reduce prediction error?
+        answer: Training uses gradient descent to shrink the prediction error.
+        option: gradient descent
+        distractors: [random search, manual tuning, genetic algorithms]
+        hint: Picture walking downhill on a landscape of errors.
+        note: >-
+          The error of each prediction is traced back through the network, and every weight
+          moves a tiny step in the direction that would have made the error smaller.
+        source: Original text
+      - id: base-model
+        prompt: What is a model called right after pre-training, before any tuning?
+        answer: It is called a base model.
+        option: a base model
+        distractors: [a chat model, a reward model, an expert system]
+        note: >-
+          A base model continues text fluently but does not reliably follow instructions. Asked
+          a question, it may simply write more questions.
+        source: Original text
+      - id: knowledge-cutoff
+        prompt: Why might a model know nothing about recent events?
+        answer: Its knowledge stops at its training data cutoff.
+        option: training data cutoff
+        distractors: [context window limit, privacy filter setting, daily usage quota]
+        hint: Think about when the training text was collected.
+        note: >-
+          Training text is collected up to some date. Anything later is unknown to the model
+          unless it is supplied in the prompt or through a tool such as web search.
+        source: Original text
+  - id: tuning
+    title: Fine-tuning and feedback
+    cards:
+      - id: what-is-fine-tuning
+        prompt: What is fine-tuning?
+        answer: Fine-tuning continues training a model on a small, focused dataset.
+        option: a small, focused dataset
+        distractors: [the held-out test set, randomly shuffled token streams, a single long document]
+        hint: The model already knows language; this step specializes it.
+        note: >-
+          Starting from a pre-trained model is far cheaper than training from scratch, and the
+          focused data shifts its behavior toward a task, domain or style.
+        source: Original text
+      - id: instruction-tuning
+        prompt: What does instruction tuning train a model on?
+        answer: Instruction tuning trains on pairs of prompts and ideal responses.
+        option: prompts and ideal responses
+        distractors: [web pages and links, images and their captions, code and compiler errors]
+        note: >-
+          Many demonstrations of a request followed by a helpful answer turn a text continuer
+          into an assistant that responds to what was asked.
+        source: Original text
+      - id: rlhf-human-input
+        prompt: What do people do in RLHF (reinforcement learning from human feedback)?
+        answer: They compare pairs of responses and choose the better one.
+        option: choose the better one
+        distractors: [write the training code, label every single token, rewrite the model weights]
+        hint: Think of an A/B test.
+        note: >-
+          Comparisons capture qualities that are hard to write down as rules, such as
+          helpfulness, clarity and tone.
+        source: Original text
+      - id: reward-model
+        prompt: In RLHF, what learns to score responses the way people would?
+        answer: In RLHF, a reward model learns to predict human preferences.
+        option: a reward model
+        distractors: [a base model, a spam filter, a search index]
+        note: >-
+          Trained on the human comparisons, it scores large numbers of new responses, so the
+          main model can be optimized without a person rating every one.
+        source: Original text

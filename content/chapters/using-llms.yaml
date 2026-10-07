@@ -1,0 +1,127 @@
+id: using-llms
+title: Using LLMs
+lessons:
+  - id: sampling-and-errors
+    title: Sampling and hallucinations
+    cards:
+      - id: temperature
+        prompt: What does raising the temperature do to a model's output?
+        answer: Higher temperature makes the output more random and varied.
+        option: more random and varied
+        distractors: [more precise and factual, shorter and more formal, slower but more accurate]
+        hint: Heat means more motion.
+        note: >-
+          Temperature reshapes the token probabilities before sampling. Low values favor the
+          most likely tokens, high values give unlikely tokens more of a chance.
+        source: Original text
+      - id: top-k-sampling
+        prompt: What does top-k sampling restrict the next-token choice to?
+        answer: Top-k sampling picks only among the k most likely tokens.
+        option: the k most likely tokens
+        distractors: [the k least likely tokens, the first k tokens typed, k tokens chosen at random]
+        note: >-
+          Cutting off the long tail keeps text varied without letting rare, nonsensical tokens
+          slip in. Top-p does the same with a probability threshold instead of a fixed count.
+        source: Original text
+      - id: what-is-a-hallucination
+        prompt: What is a hallucination in an LLM?
+        answer: A hallucination is a plausible but false statement from the model.
+        option: plausible but false
+        distractors: [true but outdated, accurate but impolite, random and unreadable]
+        hint: It sounds right, and that is the problem.
+        note: >-
+          Hallucinations are often specific details such as names, numbers or citations,
+          delivered in the same confident tone as correct ones.
+        source: Original text
+      - id: why-hallucinations-happen
+        prompt: Why do models hallucinate?
+        answer: Models are trained to produce likely text, not verified facts.
+        option: likely text
+        distractors: [deliberate lies, short answers, random noise]
+        note: >-
+          Nothing in next-token prediction checks a claim against the world, and there is no
+          intent to deceive, so a fluent answer can simply be made up.
+        source: Original text
+  - id: prompting
+    title: Prompting
+    cards:
+      - id: few-shot-prompting
+        prompt: What is few-shot prompting?
+        answer: Few-shot prompting puts a few worked examples in the prompt.
+        option: worked examples
+        distractors: [repeated instructions, banned words, spelling errors]
+        hint: Here "shot" means example.
+        note: >-
+          The examples show the format and style you want, and the model picks up the pattern
+          without any retraining.
+        source: Original text
+      - id: system-prompt
+        prompt: What is a system prompt?
+        answer: A system prompt sets standing instructions for the whole conversation.
+        option: standing instructions
+        distractors: [model weights, user passwords, billing settings]
+        note: >-
+          It is usually written by the app, not the user, and sets role, tone and rules. It is
+          still just text in the context, so it guides behavior rather than guarantees it.
+        source: Original text
+      - id: step-by-step-reasoning
+        prompt: Why does asking a model to work step by step help on multi-step problems?
+        answer: The written steps become context for later tokens.
+        option: context for later tokens
+        distractors: [extra memory in weights, a hidden second model, faster token generation speed]
+        hint: The model can read what it has already written.
+        note: >-
+          Each token gets a limited amount of computation, so spelling out intermediate results
+          lets the model build on them instead of jumping straight to an answer.
+        source: Original text
+  - id: tools-and-evaluation
+    title: Retrieval, tools and evaluation
+    cards:
+      - id: what-rag-does
+        prompt: What does retrieval-augmented generation (RAG) do?
+        answer: Before answering, RAG adds retrieved documents to the prompt.
+        option: adds retrieved documents to the prompt
+        distractors: [retrains the model on every question, copies the prompt into the weights, deletes outdated facts from the model]
+        hint: Think of an open-book exam.
+        note: >-
+          A search step finds passages relevant to the question, for example in company
+          documents, and the model answers from that text and can cite it.
+        source: Original text
+      - id: rag-without-retraining
+        prompt: What does RAG let a model use without retraining?
+        answer: RAG lets a model use private or recent information without retraining.
+        option: private or recent information
+        distractors: [a bigger context window, a faster sampling method, much higher temperature settings]
+        note: >-
+          Updating the document store is enough to change what the model can answer about, and
+          the weights stay untouched.
+        source: Original text
+      - id: tool-calls
+        prompt: How does a model use a tool, such as a calculator or a search API?
+        answer: It outputs a structured tool call, and the app runs it.
+        option: a structured tool call
+        distractors: [a spoken voice command, a request for retraining, a direct database write]
+        hint: Someone else has to press the button.
+        note: >-
+          The model never executes anything itself. The application runs the tool and returns
+          the result as new text in the context.
+        source: Original text
+      - id: what-is-an-eval
+        prompt: What is an eval for an LLM application?
+        answer: An eval is a fixed set of test cases with expected outcomes.
+        option: a fixed set of test cases
+        distractors: [a running log of user complaints, a copy of the training data, a public leaderboard of model scores]
+        hint: Think of unit tests for behavior.
+        note: >-
+          Running the same cases after every change to the prompt, model or retrieval shows
+          whether quality improved or quietly got worse.
+        source: Original text
+      - id: llm-as-a-judge
+        prompt: What happens in LLM-as-a-judge evaluation?
+        answer: One model grades another model's outputs against a rubric.
+        option: grades another model's outputs
+        distractors: [retrains another model's weights, writes another model's prompts, hides another model's mistakes]
+        note: >-
+          It scales review to thousands of outputs, but the judge has biases of its own, so its
+          scores should be spot-checked against human ratings.
+        source: Original text
