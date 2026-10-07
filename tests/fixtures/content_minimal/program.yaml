@@ -1,0 +1,5 @@
+schema_version: 1
+title: Fixture course
+description: A tiny course used by the test suite.
+language: en
+chapters: [basics]

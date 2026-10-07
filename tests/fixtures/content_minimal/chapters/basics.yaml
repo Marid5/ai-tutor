@@ -1,0 +1,34 @@
+id: basics
+title: Basics
+exercises: {assemble: true}
+lessons:
+  - id: first
+    title: First lesson
+    cards:
+      - id: capital-of-france
+        prompt: What is the capital of France?
+        answer: The capital city of France is Paris.
+        option: Paris
+        distractors: [Lyon, Marseille, Nice]
+        accepted: [Paris]
+        tags: [geography]
+        source: Original text
+      - id: powerhouse-organelle
+        prompt: Which organelle produces most of a cell's energy?
+        answer: Mitochondria
+        distractors: [Ribosomes, Nucleus, Vacuole]
+        hint: It is often called the powerhouse of the cell.
+  - id: second
+    title: Second lesson
+    cards:
+      - id: light-versus-sound
+        prompt: Which travels faster, light or sound?
+        answer: Light travels faster than sound
+      - id: primary-colors
+        prompt: Which are the primary colors in painting?
+        answer: The primary colors are red, blue and yellow
+        option: "red, blue and yellow"
+        distractors: ["green, orange and purple", "black, white and grey", "pink, brown and teal"]
+        accepted: [red, blue, yellow]
+        key_mode: all_of
+        note: Mixing any two primaries gives a secondary color.

@@ -1,4 +1,4 @@
-.PHONY: setup test lint format
+.PHONY: setup test lint format validate
 
 setup:
 	/opt/homebrew/bin/python3.12 -m venv .venv || python3 -m venv .venv
@@ -15,3 +15,6 @@ lint:
 
 format:
 	.venv/bin/ruff format .
+
+validate:
+	.venv/bin/python scripts/validate_content.py
