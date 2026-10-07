@@ -370,12 +370,14 @@ def test_chapters_next_lesson(signed_in):
 
 
 def test_settings_show_hint_round_trip(signed_in):
-    assert signed_in.get("/api/settings").json() == {"show_hint_by_default": True}
-    updated = signed_in.post("/api/settings", json={"show_hint_by_default": False})
-    assert updated.status_code == 200
-    assert updated.json() == {"show_hint_by_default": False}
     assert signed_in.get("/api/settings").json() == {"show_hint_by_default": False}
-    assert signed_in.post("/api/settings", json={}).json() == {"show_hint_by_default": False}
+    updated = signed_in.post("/api/settings", json={"show_hint_by_default": True})
+    assert updated.status_code == 200
+    assert updated.json() == {"show_hint_by_default": True}
+    assert signed_in.get("/api/settings").json() == {"show_hint_by_default": True}
+    assert signed_in.post("/api/settings", json={}).json() == {"show_hint_by_default": True}
+    off = signed_in.post("/api/settings", json={"show_hint_by_default": False})
+    assert off.json() == {"show_hint_by_default": False}
     assert signed_in.post("/api/settings", json={"show_hint_by_default": "yes"}).status_code == 422
     assert signed_in.post("/api/settings", json={"unknown": True}).status_code == 422
 

@@ -38,8 +38,9 @@ RETENTION_WINDOW_DAYS = 30
 
 # ------------------------------------------------------------------ settings
 def show_hint_by_default(db: Database, user_id: str) -> bool:
-    """Default on: the hint is help for reading the card, never what is checked."""
-    return db.get_user_meta(user_id, SHOW_HINT_KEY) != "0"
+    """Default off: a hint waits behind a "Show hint" button, so the learner
+    tries to recall the answer first and asks for help only when needed."""
+    return db.get_user_meta(user_id, SHOW_HINT_KEY) == "1"
 
 
 def set_show_hint_by_default(db: Database, user_id: str, value: bool) -> None:

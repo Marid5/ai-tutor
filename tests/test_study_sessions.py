@@ -121,6 +121,8 @@ def test_progress_numbers_follow_current_primary_checks(db, tmp_path):
 
 def test_show_hint_by_default_round_trip(db):
     user = make_user(db)
+    assert curriculum.show_hint_by_default(db, user) is False, "hints start behind a button"
+    curriculum.set_show_hint_by_default(db, user, True)
     assert curriculum.show_hint_by_default(db, user) is True
     curriculum.set_show_hint_by_default(db, user, False)
     assert curriculum.show_hint_by_default(db, user) is False
