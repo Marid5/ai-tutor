@@ -309,13 +309,17 @@ export const getSession = (sessionId?: string) =>
 /** Send 1–100 buffered answers; each gets its own result, and the batch never fails as a whole. */
 export const sendAnswers = (events: AnswerEvent[]) => post<AnswersResponse>('/api/answers', { events });
 
+const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+/** A server detail ("unknown session") as a sentence ("Unknown session."). */
+export function asSentence(detail: string | null | undefined): string {
+  const text = (detail ?? '').trim();
+  if (!text) return GENERIC_ERROR;
+  const sentence = text[0].toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
 /** A sentence for the learner: the server's detail, or what went wrong with the connection. */
 export function describeError(error: unknown): string {
-  if (error instanceof ApiError) {
-    const text = error.detail.trim();
-    if (!text) return 'Something went wrong. Please try again.';
-    const sentence = text[0].toUpperCase() + text.slice(1);
-    return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
-  }
-  return 'Something went wrong. Please try again.';
+  return error instanceof ApiError ? asSentence(error.detail) : GENERIC_ERROR;
 }

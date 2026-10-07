@@ -10,6 +10,7 @@ const PATHS = {
   review: 'M20 11a8 8 0 1 0-2.3 5.7M20 4.5V11h-6.5',
   practice: 'M4 8h13M14 4.5 17.5 8 14 11.5M20 16H7M10 12.5 6.5 16l3.5 3.5',
   arrow: 'M5 12h14M13 6l6 6-6 6',
+  close: 'M6 6l12 12M18 6 6 18',
 } as const;
 
 export type IconName = keyof typeof PATHS;

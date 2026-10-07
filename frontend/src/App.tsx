@@ -103,7 +103,7 @@ export function App() {
     return <Shell><SignIn config={config} onSignedIn={loadHome} /></Shell>;
   }
   if (view.name === 'session') {
-    return <Shell courseTitle={config?.title}><Session session={view.session} onExit={() => void loadHome()} /></Shell>;
+    return <Shell courseTitle={config?.title}><Session key={view.session.session_id} session={view.session} onExit={() => void loadHome()} /></Shell>;
   }
 
   let screen;
