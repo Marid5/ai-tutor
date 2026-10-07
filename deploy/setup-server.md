@@ -180,7 +180,7 @@ Run these after the first deploy and after every deploy that touches the network
    ```bash
    curl -fsS https://tutor.example.com/api/health
    ```
-   The answer is `"status":"ok"` and `git_sha` equals `git -C /srv/ai-tutor rev-parse HEAD`.
+   The answer is `"status":"ok"` and `git_sha` equals `sudo -u deploy git -C /srv/ai-tutor rev-parse HEAD`.
 2. **The app port is closed from outside.** From your own computer, not from the server:
    ```bash
    curl -m 5 http://203.0.113.10:8000/ ; echo "exit code: $?"

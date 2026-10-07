@@ -118,7 +118,7 @@ Under it, list facts you skipped and why, and any `[unreadable]` spots. Apply th
 | `warning: option has N words but the longest distractor has M` | Shorten the option or lengthen the distractors to the same word count. |
 | `warning: <kind> is enabled but no card in this chapter supports it` | Make the cards support it (see the checklist), or recommend `choose-exercises` to the user. |
 
-`make validate` is the gate for content. `make test` also passes on any valid course: `tests/test_demo_content.py` checks that whatever is in `content/` loads without errors or warnings, and skips its demo-specific checks once the course is no longer the bundled demo. Never edit tests to make content pass.
+`make validate` is the gate for content. `make test` also passes on any course that validates without warnings: `tests/test_demo_content.py` checks that whatever is in `content/` loads without errors or warnings, and skips its demo-specific checks once the course is no longer the bundled demo. Never edit tests to make content pass.
 
 ## 8. Report and commit
 
