@@ -89,6 +89,43 @@ describe('App', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'How LLMs work' })));
   });
 
+  it('stays in a session that started while the home board was still reloading', async () => {
+    const session: StudySession = {
+      session_id: 'tokens', lesson_id: 'tokens', title: 'Tokens', mode: 'lesson', total_cards: 4, resolved_cards: 0,
+      steps: [{
+        id: 'triage:what-is-a-token:1a2b3c4d:0', kind: 'triage', card_id: 'what-is-a-token',
+        prompt: 'What is a token?', answer: 'A token is a word or word piece.', hint: null, note: null,
+      }],
+    };
+    let release = () => {};
+    let board = 0;
+    const fetchMock = serve({
+      '/api/config': () => [200, config],
+      '/api/chapters': () => [200, chapters],
+      '/api/progress': () => [200, progress],
+      '/api/settings': () => [200, { show_hint_by_default: false }],
+      '/api/lessons/tokens/start': () => [200, session],
+    });
+    // The second request for the board (on the way back from Progress) answers late.
+    const answer = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === '/api/chapters' && ++board === 2) await new Promise<void>(resolve => { release = resolve; });
+      return answer(input);
+    });
+    render(<App />);
+    await screen.findByRole('heading', { level: 1, name: 'How LLMs work' });
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+    await screen.findByRole('heading', { level: 1, name: 'Your progress' });
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }));
+    // The board from before is still on screen, so the learner can start the lesson at once.
+    fireEvent.click(await screen.findByRole('button', { name: /Start lesson/ }));
+    await screen.findByRole('heading', { level: 1, name: 'What is a token?' });
+
+    release();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(screen.getByRole('heading', { level: 1, name: 'What is a token?' })).toBeTruthy();
+  });
+
   it('goes to sign-in when the sign-in expires in the middle of a session', async () => {
     const session: StudySession = {
       session_id: 'tokens', lesson_id: 'tokens', title: 'Tokens', mode: 'lesson', total_cards: 4, resolved_cards: 0,

@@ -17,8 +17,13 @@ type View =
   | { name: Tab }
   | { name: 'session'; session: StudySession };
 
-// After loading home data, stay on the Progress or Settings tab if the learner is there.
-const showHome = (current: View): View => (current.name === 'progress' || current.name === 'settings' ? current : { name: 'home' });
+// After loading home data, stay on the Progress or Settings tab if the learner is
+// there, and in a session unless the load was the way out of it: a board that
+// arrives after the learner started a lesson must not close that lesson.
+const showHome = (leavingSession: boolean) => (current: View): View =>
+  current.name === 'progress' || current.name === 'settings' || (current.name === 'session' && !leavingSession)
+    ? current
+    : { name: 'home' };
 
 export function App() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -30,15 +35,15 @@ export function App() {
   const startingRef = useRef(false);
 
   /** Load the home board; false when the server sees no session (sign-in shows instead). */
-  const loadHome = useCallback(async (): Promise<boolean> => {
+  const loadHome = useCallback(async (leavingSession = false): Promise<boolean> => {
     setHomeError(null);
     try {
       setChapters(await api.getChapters());
-      setView(showHome);
+      setView(showHome(leavingSession));
     } catch (error) {
       if (error instanceof api.ApiError && error.status === 401) return false; // onUnauthorized shows sign-in
       setHomeError(error);
-      setView(showHome);
+      setView(showHome(leavingSession));
     }
     return true;
   }, []);
@@ -103,7 +108,7 @@ export function App() {
     return <Shell><SignIn config={config} onSignedIn={loadHome} /></Shell>;
   }
   if (view.name === 'session') {
-    return <Shell courseTitle={config?.title}><Session key={view.session.session_id} session={view.session} onExit={() => void loadHome()} /></Shell>;
+    return <Shell courseTitle={config?.title}><Session key={view.session.session_id} session={view.session} onExit={() => void loadHome(true)} /></Shell>;
   }
 
   let screen;
