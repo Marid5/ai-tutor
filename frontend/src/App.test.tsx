@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
-import type { Chapters, Config, Progress } from './api';
+import type { Chapters, Config, Progress, StudySession } from './api';
 
 const config: Config = { title: 'How LLMs work', description: 'A short course.', language: 'en', registration_open: false };
 
@@ -87,5 +87,29 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Home' }));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'How LLMs work' })));
+  });
+
+  it('goes to sign-in when the sign-in expires in the middle of a session', async () => {
+    const session: StudySession = {
+      session_id: 'tokens', lesson_id: 'tokens', title: 'Tokens', mode: 'lesson', total_cards: 4, resolved_cards: 0,
+      steps: [{
+        id: 'p1:choice:what-is-a-token:1a2b3c4d:0', kind: 'choice', card_id: 'what-is-a-token',
+        prompt: 'What is a token?', answer: 'A token is a word or word piece.', hint: null, note: null,
+        options: ['a whole sentence', 'a word or word piece', 'a full paragraph', 'a line of code'],
+      }],
+    };
+    serve({
+      '/api/config': () => [200, config],
+      '/api/chapters': () => [200, chapters],
+      '/api/settings': () => [200, { show_hint_by_default: false }],
+      '/api/lessons/tokens/start': () => [200, session],
+      '/api/answers': signedOut,
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: /Start lesson/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'a word or word piece' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Sync and continue' })).toBeNull();
   });
 });

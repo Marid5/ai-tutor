@@ -1063,7 +1063,7 @@ h1[tabindex="-1"]:focus {
 }
 
 /* --------------------------------------------------------------- session */
-.sr-only {
+.visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1370,6 +1370,30 @@ h1[tabindex="-1"]:focus {
   background: var(--bad-soft);
 }
 
+/* A glyph as well as the colour, so the verdict does not rest on colour
+   alone. The text alternative after "/" is empty: the button already says
+   "correct" or "incorrect" in visually hidden text. */
+.option[data-state="right"]::after,
+.option[data-state="wrong"]::after {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.option[data-state="right"]::after {
+  content: "\2713";
+  content: "\2713" / "";
+  color: var(--good);
+}
+
+.option[data-state="wrong"]::after {
+  content: "\2717";
+  content: "\2717" / "";
+  color: var(--bad);
+}
+
 .cloze-text {
   margin-bottom: 18px;
   padding: 16px 18px;
@@ -1540,8 +1564,17 @@ h1[tabindex="-1"]:focus {
   height: 32px;
 }
 
-.done .stats {
+.sitting {
   margin-top: 24px;
+}
+
+.sitting .eyebrow {
+  font-size: 12px;
+}
+
+.stats-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 8px;
 }
 
 @media (min-width: 760px) {

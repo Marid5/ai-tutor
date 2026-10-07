@@ -65,10 +65,18 @@ describe('Choice', () => {
     expect(onAnswer).not.toHaveBeenCalled();
     expect(option(2).dataset.state).toBe('wrong');
     expect(option(0).dataset.state).toBeUndefined();
+    // Not by colour alone: the verdict is in the button's name too.
+    expect(screen.getByRole('button', { name: 'a full paragraph, incorrect' })).toBe(option(2));
+  });
+
+  it('names the chosen option correct when the server says so', () => {
+    render(<Choice options={OPTIONS} disabled onAnswer={vi.fn()} chosen="a word or word piece" verdict />);
+    expect(screen.getByRole('button', { name: 'a word or word piece, correct' }).dataset.state).toBe('right');
   });
 
   it('shows no verdict on the chosen option while the server is still checking it', () => {
     render(<Choice options={OPTIONS} disabled onAnswer={vi.fn()} chosen="a word or word piece" verdict={null} />);
     expect(option(1).dataset.state).toBe('chosen');
+    expect(screen.getByRole('button', { name: 'a word or word piece, your answer' })).toBe(option(1));
   });
 });

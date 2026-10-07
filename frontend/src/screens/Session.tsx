@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import * as api from '../api';
 import type { AnswerEvent, AnswersResponse, SessionMode, Step, StudySession } from '../api';
 import { ActiveStepTimer } from '../activeTime';
@@ -31,6 +31,7 @@ const ELAPSED_MS_MAX = 5 * 60 * 1000;
  *                            │        └─────▶ answering (self-graded kinds: straight to the server's next step)
  *                            │        └─────▶ answering + notice (stale: the returned session replaces this one)
  *                            └─fail─▶ out-of-sync ──Sync and continue (GET /api/session)──▶ answering
+ *                            └─401──▶ signed-out (the app switches to sign-in; "Sign in" is the fallback)
  */
 type Phase =
   | { name: 'answering' }
@@ -45,7 +46,8 @@ type Phase =
       /** A step the server kept handing back after it was answered; syncing must not land on it again. */
       loopingStep: string | null;
       syncing: boolean;
-    };
+    }
+  | { name: 'signed-out' };
 
 const LEAVE_LABEL: Record<SessionMode, string> = {
   lesson: 'Leave lesson',
@@ -60,12 +62,29 @@ const OUT_OF_SYNC = 'Out of sync';
 const CONFLICT_MESSAGE = 'The server returned the same exercise again.';
 const NO_CONTINUATION = 'The server did not send the next exercise.';
 
+const VERDICT_TITLE = (correct: boolean | null) => (correct === true ? 'Correct' : correct === false ? 'Not quite' : 'Answer saved');
+
+const isSignedOut = (error: unknown) => error instanceof api.ApiError && error.status === 401;
+
+/**
+ * A held-down Enter repeats keydown; on a freshly focused Next or Sync button
+ * that would skip the verdict the learner has not read yet.
+ */
+const ignoreRepeat = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+  if (event.repeat) event.preventDefault();
+};
+
 /** The study session: one step at a time, as the server hands them out, then the Done screen. */
 export function Session({ session: opened, onExit }: SessionProps) {
   const [session, setSession] = useState(opened);
   const [phase, setPhaseState] = useState<Phase>({ name: 'answering' });
   const [notice, setNotice] = useState('');
-  const [hintsByDefault, setHintsByDefault] = useState(false);
+  // null until /api/settings answers: no hint and no "Show hint" button yet,
+  // so the hint never flickers in and out.
+  const [hintsByDefault, setHintsByDefault] = useState<boolean | null>(null);
+  // Bumped on every move, so a step the server serves again under the same id
+  // (after a sync) starts fresh: new inputs, new clock.
+  const [attempt, setAttempt] = useState(0);
   const [tally, setTally] = useState({ answered: 0, checks: 0, correct: 0 });
 
   // The phase is also kept in a ref: a second click or key press in the same
@@ -86,18 +105,19 @@ export function Session({ session: opened, onExit }: SessionProps) {
   if (timerRef.current === null) timerRef.current = new ActiveStepTimer();
   const timer = timerRef.current;
 
+  const heading = useRef<HTMLHeadingElement>(null);
   const nextButton = useRef<HTMLButtonElement>(null);
   const syncButton = useRef<HTMLButtonElement>(null);
   const feedbackTitle = useId();
 
   const step: Step | undefined = session.steps[0];
-  const stepKey = step?.id ?? 'done';
+  const stepKey = step ? `${step.id}:${attempt}` : 'done';
 
   useEffect(() => {
     let cancelled = false;
     api.getSettings().then(
       settings => { if (!cancelled) setHintsByDefault(settings.show_hint_by_default); },
-      () => undefined, // hints stay behind the button
+      () => { if (!cancelled) setHintsByDefault(false); }, // hints stay behind the button
     );
     return () => { cancelled = true; };
   }, []);
@@ -138,12 +158,13 @@ export function Session({ session: opened, onExit }: SessionProps) {
     if (phase.name === 'out-of-sync' && !phase.syncing) syncButton.current?.focus();
     if (phase.name === 'answering' && focusHeading.current) {
       focusHeading.current = false;
-      document.querySelector<HTMLElement>('main h1')?.focus();
+      heading.current?.focus();
     }
   }, [phase, session]);
 
   const advance = (next: StudySession) => {
     focusHeading.current = true;
+    setAttempt(n => n + 1);
     setSession(next);
     setPhase({ name: 'answering' });
     window.scrollTo(0, 0);
@@ -205,7 +226,9 @@ export function Session({ session: opened, onExit }: SessionProps) {
     try {
       response = await api.sendAnswers([event]);
     } catch (error) {
-      if (mounted.current) outOfSync(api.describeError(error), answer, null, NOT_SAVED);
+      if (!mounted.current) return;
+      if (isSignedOut(error)) setPhase({ name: 'signed-out' });
+      else outOfSync(api.describeError(error), answer, null, NOT_SAVED);
       return;
     }
     if (mounted.current) handleResponse(step, answer, response);
@@ -233,7 +256,9 @@ export function Session({ session: opened, onExit }: SessionProps) {
       setNotice('');
       advance(fresh);
     } catch (error) {
-      if (mounted.current) setPhase({ ...current, message: api.describeError(error), syncing: false });
+      if (!mounted.current) return;
+      if (isSignedOut(error)) setPhase({ name: 'signed-out' });
+      else setPhase({ ...current, message: api.describeError(error), syncing: false });
     }
   };
 
@@ -247,7 +272,7 @@ export function Session({ session: opened, onExit }: SessionProps) {
 
   if (!step) {
     return (
-      <Done mode={session.mode} resolved={session.resolved_cards} total={session.total_cards}
+      <Done headingRef={heading} mode={session.mode} resolved={session.resolved_cards} total={session.total_cards}
         answered={tally.answered} checks={tally.checks} correct={tally.correct} onExit={onExit} />
     );
   }
@@ -257,7 +282,12 @@ export function Session({ session: opened, onExit }: SessionProps) {
   const progress = phase.name === 'graded' ? phase.next : session;
   const total = progress.total_cards;
   const resolved = Math.min(progress.resolved_cards, total);
-  const chosen = phase.name === 'answering' ? null : phase.answer;
+  const chosen = phase.name === 'pending' || phase.name === 'graded' || phase.name === 'out-of-sync' ? phase.answer : null;
+  // One live region, always mounted, so assistive tech announces each change.
+  let announcement = '';
+  if (phase.name === 'pending') announcement = closed ? 'Checking your answer…' : 'Saving…';
+  else if (phase.name === 'graded') announcement = `${VERDICT_TITLE(phase.correct)}. ${step.answer}`;
+  else if (phase.name === 'answering') announcement = notice;
   const verdict = phase.name === 'graded' ? phase.correct : null;
 
   return (
@@ -271,13 +301,14 @@ export function Session({ session: opened, onExit }: SessionProps) {
         <ProgressBar value={resolved} max={total} label="Cards done" size="sm" />
       </div>
       <p className="session-title"><span className="chip">{session.title}</span></p>
-      {notice && <p className="notice" role="status">{notice}</p>}
+      <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{announcement}</p>
+      {notice && <p className="notice">{notice}</p>}
 
-      <StepView key={step.id} step={step} locked={phase.name !== 'answering'} chosen={chosen} verdict={verdict}
+      <StepView key={stepKey} headingRef={heading} step={step} locked={phase.name !== 'answering'} chosen={chosen} verdict={verdict}
         showHintByDefault={hintsByDefault} onAnswer={answer => void submit(answer)} />
 
       {phase.name === 'pending' && (
-        <p className="pending" role="status">
+        <p className="pending">
           <span className="spinner" aria-hidden="true" />
           <span>{closed ? 'Checking your answer…' : 'Saving…'}</span>
         </p>
@@ -285,13 +316,12 @@ export function Session({ session: opened, onExit }: SessionProps) {
 
       {phase.name === 'graded' && (
         <section className={`feedback ${phase.correct === true ? 'is-right' : phase.correct === false ? 'is-wrong' : ''}`}
-          role="status" aria-labelledby={feedbackTitle}>
-          <h2 id={feedbackTitle} className="feedback-title">
-            {phase.correct === true ? 'Correct' : phase.correct === false ? 'Not quite' : 'Answer saved'}
-          </h2>
+          aria-labelledby={feedbackTitle}>
+          <h2 id={feedbackTitle} className="feedback-title">{VERDICT_TITLE(phase.correct)}</h2>
           <CardBack step={step} />
           {phase.correct === false && <p className="feedback-text">This card will come back for another try.</p>}
-          <button type="button" className="button primary" ref={nextButton} onClick={goNext}>
+          <button type="button" className="button primary" ref={nextButton} onClick={goNext}
+            onKeyDown={ignoreRepeat} aria-describedby={feedbackTitle}>
             <span>Next</span>
             <Icon name="arrow" />
           </button>
@@ -302,10 +332,19 @@ export function Session({ session: opened, onExit }: SessionProps) {
         <section className="feedback is-error" role="alert">
           <h2 className="feedback-title">{phase.title}</h2>
           <p className="feedback-text">{phase.message}</p>
-          <button type="button" className="button primary" ref={syncButton} disabled={phase.syncing} onClick={() => void sync()}>
+          <button type="button" className="button primary" ref={syncButton} disabled={phase.syncing}
+            onKeyDown={ignoreRepeat} onClick={() => void sync()}>
             Sync and continue
           </button>
           <button type="button" className="button secondary" onClick={onExit}>Back to home</button>
+        </section>
+      )}
+
+      {phase.name === 'signed-out' && (
+        <section className="feedback is-error" role="alert">
+          <h2 className="feedback-title">You are signed out</h2>
+          <p className="feedback-text">Sign in again to continue. Answers the server confirmed are saved.</p>
+          <button type="button" className="button primary" onClick={onExit}>Sign in</button>
         </section>
       )}
     </div>

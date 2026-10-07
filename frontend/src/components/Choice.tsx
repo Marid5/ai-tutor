@@ -14,6 +14,9 @@ interface ChoiceProps {
   label?: string;
 }
 
+/** Said after the chosen option's text; the colour and glyph show the same. */
+const STATE_TEXT = { chosen: ', your answer', right: ', correct', wrong: ', incorrect' } as const;
+
 /**
  * Answer buttons for choice and cloze steps. A click or tap answers at once;
  * on a keyboard, 1-9 selects (and focuses) an option and Enter submits it.
@@ -55,6 +58,7 @@ export function Choice({ options, disabled, onAnswer, chosen = null, verdict = n
             onClick={() => onAnswer(option)}>
             <kbd className="key" aria-hidden="true">{index + 1}</kbd>
             <span className="option-text">{option}</span>
+            {state && <span className="visually-hidden">{STATE_TEXT[state]}</span>}
           </button>
         );
       })}

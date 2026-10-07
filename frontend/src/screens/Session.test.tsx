@@ -113,6 +113,8 @@ function sentEvents(fetchMock: ReturnType<typeof serve>): AnswerEvent[] {
 }
 
 const heading = () => screen.getByRole('heading', { level: 1 });
+/** The one live region that announces the pending state, verdicts and notices. */
+const announced = () => screen.getByRole('status').textContent;
 const nextButton = () => screen.queryByRole('button', { name: 'Next' });
 
 beforeEach(() => {
@@ -137,7 +139,7 @@ describe('Session', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'a word or word piece' }));
 
-    const verdict = await screen.findByRole('status', { name: 'Correct' });
+    const verdict = await screen.findByRole('region', { name: 'Correct' });
     expect(within(verdict).getByText('A token is a word or word piece.')).toBeTruthy();
     expect(within(verdict).getByText('Punctuation and spaces get tokens too.')).toBeTruthy();
     const [event] = sentEvents(fetchMock);
@@ -163,7 +165,7 @@ describe('Session', () => {
     });
     render(<Session session={lesson([choiceStep])} onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'a word or word piece' }));
-    const verdict = await screen.findByRole('status', { name: 'Not quite' });
+    const verdict = await screen.findByRole('region', { name: 'Not quite' });
     expect(within(verdict).getByText('A token is a word or word piece.')).toBeTruthy();
     expect(screen.queryByText('Correct')).toBeNull();
   });
@@ -173,8 +175,9 @@ describe('Session', () => {
     serve({ '/api/answers': () => reply.promise });
     render(<Session session={lesson([choiceStep])} onExit={vi.fn()} />);
 
+    expect(announced()).toBe('');
     fireEvent.click(screen.getByRole('button', { name: 'a word or word piece' }));
-    expect(await screen.findByText('Checking your answer…')).toBeTruthy();
+    await waitFor(() => expect(announced()).toBe('Checking your answer…'));
     expect(nextButton()).toBeNull();
     expect(screen.getAllByRole('button', { name: /a (whole|word|full|line)/ }).every(b => (b as HTMLButtonElement).disabled)).toBe(true);
     // Enter does nothing while the request is pending.
@@ -183,6 +186,10 @@ describe('Session', () => {
 
     await act(async () => reply.release([200, answers([result(choiceStep, { correct: true })], lesson([triageStep], 1))]));
     expect(nextButton()).toBeTruthy();
+    expect(announced()).toBe('Correct. A token is a word or word piece.');
+    // The Next button is described by the verdict it follows.
+    const describedBy = nextButton()!.getAttribute('aria-describedby')!;
+    expect(document.getElementById(describedBy)?.textContent).toBe('Correct');
   });
 
   it('keeps a self-graded step locked until the server confirms it, then moves on', async () => {
@@ -191,7 +198,7 @@ describe('Session', () => {
     render(<Session session={lesson([triageStep, choiceStep])} onExit={vi.fn()} />);
 
     fireEvent.keyDown(document.body, { key: '2' });
-    expect(await screen.findByText('Saving…')).toBeTruthy();
+    await waitFor(() => expect(announced()).toBe('Saving…'));
     expect(nextButton()).toBeNull();
     expect((screen.getByRole('button', { name: 'I know' }) as HTMLButtonElement).disabled).toBe(true);
     expect(sentEvents(fetchMock)[0]).toMatchObject({ kind: 'triage', answer: 'know' });
@@ -251,7 +258,8 @@ describe('Session', () => {
     await waitFor(() => expect(heading().textContent).toBe(clozeStep.prompt));
     expect(screen.queryByText('Not quite')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByText(/was updated, so it was skipped/)).toBeTruthy();
+    expect(announced()).toBe('That exercise was updated, so it was skipped.');
+    expect(document.querySelector('.notice')?.textContent).toBe('That exercise was updated, so it was skipped.');
   });
 
   it('does not loop when the server hands back the step that was just answered', async () => {
@@ -268,8 +276,13 @@ describe('Session', () => {
   });
 
   it('hides the hint behind a button unless hints are shown by default', async () => {
-    serve({});
+    const settings = deferred();
+    serve({ '/api/settings': () => settings.promise });
     render(<Session session={lesson([choiceStep])} onExit={vi.fn()} />);
+    // Until the setting is known, neither the hint nor its button shows, so nothing flickers.
+    expect(screen.queryByText(choiceStep.hint!)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show hint' })).toBeNull();
+    await act(async () => settings.release([200, { show_hint_by_default: false }]));
     expect(screen.queryByText(choiceStep.hint!)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Show hint' }));
     expect(screen.getByText(choiceStep.hint!)).toBeTruthy();
@@ -303,7 +316,7 @@ describe('Session', () => {
     expect(screen.getByLabelText('Gap')).toBeTruthy();
     fireEvent.keyDown(document.body, { key: '2' });
     fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
-    await screen.findByRole('status', { name: 'Correct' });
+    await screen.findByRole('region', { name: 'Correct' });
     expect(sentEvents(fetchMock)[0]).toMatchObject({ kind: 'cloze', answer: 'similar meanings' });
   });
 
@@ -321,7 +334,7 @@ describe('Session', () => {
     fireEvent.click(tiles.getByRole('button', { name: 'piece.' }));
     expect(check.disabled).toBe(false);
     fireEvent.click(check);
-    await screen.findByRole('status', { name: 'Correct' });
+    await screen.findByRole('region', { name: 'Correct' });
     expect(sentEvents(fetchMock)[0]).toMatchObject({ kind: 'assemble', answer: 'A token is a word or word piece.' });
   });
 
@@ -330,12 +343,67 @@ describe('Session', () => {
     serve({ '/api/answers': () => [200, answers([result(choiceStep, { correct: true })], lesson([], 4))] });
     render(<Session session={lesson([choiceStep], 3)} onExit={onExit} />);
     fireEvent.click(screen.getByRole('button', { name: 'a word or word piece' }));
-    await screen.findByRole('status', { name: 'Correct' });
+    await screen.findByRole('region', { name: 'Correct' });
     fireEvent.keyDown(document.body, { key: 'Enter' });
 
     expect(heading().textContent).toBe('Lesson complete');
-    expect(screen.getByText('100%')).toBeTruthy();
+    const sitting = screen.getByRole('region', { name: 'This sitting' });
+    expect(within(sitting).getByText('100%')).toBeTruthy();
+    expect(screen.getByText('Your progress is saved: 4 of 4 cards done.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back to home' }));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a held-down Enter on Next, so the verdict cannot be skipped by accident', async () => {
+    serve({ '/api/answers': () => [200, answers([result(choiceStep, { correct: false })], lesson([triageStep]))] });
+    render(<Session session={lesson([choiceStep])} onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'a whole sentence' }));
+    await screen.findByRole('region', { name: 'Not quite' });
+    expect(fireEvent.keyDown(nextButton()!, { key: 'Enter', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(nextButton()!, { key: 'Enter' })).toBe(true);
+  });
+
+  it('sends one answer when two options are clicked in the same tick', async () => {
+    const reply = deferred();
+    const fetchMock = serve({ '/api/answers': () => reply.promise });
+    render(<Session session={lesson([choiceStep])} onExit={vi.fn()} />);
+    const [first, second] = screen.getAllByRole('button', { name: /^a (whole|word)/ });
+    // Both clicks land before React re-renders and disables the buttons.
+    act(() => {
+      first.click();
+      second.click();
+    });
+    expect(sentEvents(fetchMock)).toHaveLength(1);
+    await act(async () => reply.release([200, answers([result(choiceStep, { correct: false })], lesson([triageStep]))]));
+    expect(sentEvents(fetchMock)).toHaveLength(1);
+  });
+
+  it('starts a step again from scratch when the server serves it again after a sync', async () => {
+    serve({
+      '/api/answers': () => 'network-error',
+      '/api/session': () => [200, lesson([assembleStep])],
+    });
+    render(<Session session={lesson([assembleStep])} onExit={vi.fn()} />);
+    const words = within(screen.getByRole('group', { name: 'Words' }));
+    for (const word of ['A', 'token', 'is', 'a', 'word', 'or', 'word', 'piece.']) {
+      fireEvent.click(words.getAllByRole('button', { name: word })[0]);
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Check' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync and continue' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(document.querySelector('.assembled')?.textContent).toBe('Your answer: Pick the words in order');
+    expect(within(screen.getByRole('group', { name: 'Words' })).getAllByRole('button')).toHaveLength(8);
+  });
+
+  it('does not offer a sync it cannot do when the sign-in has expired', async () => {
+    const onExit = vi.fn();
+    serve({ '/api/answers': () => [401, { detail: 'login required' }] });
+    render(<Session session={lesson([choiceStep])} onExit={onExit} />);
+    fireEvent.click(screen.getByRole('button', { name: 'a whole sentence' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/You are signed out/);
+    expect(within(alert).queryByRole('button', { name: 'Sync and continue' })).toBeNull();
+    fireEvent.click(within(alert).getByRole('button', { name: 'Sign in' }));
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 

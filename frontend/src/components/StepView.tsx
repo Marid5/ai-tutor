@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type Ref } from 'react';
 import type { Step, StepKind } from '../api';
 import { Assemble } from './Assemble';
 import { Choice } from './Choice';
@@ -34,12 +34,15 @@ interface StepViewProps {
   chosen: string | null;
   /** The server's verdict on a closed step; null until it arrives. */
   verdict: boolean | null;
-  showHintByDefault: boolean;
+  /** null while the learner's setting is loading: neither hint nor button yet. */
+  showHintByDefault: boolean | null;
+  /** Receives the prompt heading, so the session can move focus to it. */
+  headingRef?: Ref<HTMLHeadingElement>;
   onAnswer: (answer: string) => void;
 }
 
 /** One exercise, rendered from the server's step payload. */
-export function StepView({ step, locked, chosen, verdict, showHintByDefault, onAnswer }: StepViewProps) {
+export function StepView({ step, locked, chosen, verdict, showHintByDefault, headingRef, onAnswer }: StepViewProps) {
   const [hintShown, setHintShown] = useState(false);
   const known = step.kind in TASK_LABEL;
 
@@ -49,8 +52,8 @@ export function StepView({ step, locked, chosen, verdict, showHintByDefault, onA
         <p className="eyebrow">{known ? TASK_LABEL[step.kind] : 'Exercise'}</p>
         {(step.repeat ?? 0) > 0 && <span className="chip chip-warn">Another try</span>}
       </div>
-      <h1 tabIndex={-1} className="prompt">{step.prompt}</h1>
-      {step.hint && (showHintByDefault || hintShown
+      <h1 tabIndex={-1} className="prompt" ref={headingRef}>{step.prompt}</h1>
+      {step.hint && showHintByDefault !== null && (showHintByDefault || hintShown
         ? <p className="hint"><span className="hint-label">Hint</span> {step.hint}</p>
         : <button type="button" className="link hint-toggle" onClick={() => setHintShown(true)}>Show hint</button>)}
 
