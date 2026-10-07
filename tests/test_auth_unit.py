@@ -95,3 +95,8 @@ def test_normalize_username_accepts_boundary_lengths():
 @pytest.mark.parametrize("bad_hash", [None, "", 123, b"bytes", "ünïcode-hash"])
 def test_verify_never_raises_for_any_hash_value(bad_hash):
     assert auth.verify_password("whatever-password", bad_hash) is False
+
+
+def test_hash_password_refuses_text_that_is_not_unicode():
+    with pytest.raises(auth.PasswordPolicyError):
+        auth.hash_password("long enough \ud800")

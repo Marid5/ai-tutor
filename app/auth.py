@@ -25,7 +25,10 @@ class UsernameError(ValueError):
 
 
 def hash_password(password: str) -> str:
-    size = len(password.encode("utf-8"))
+    try:
+        size = len(password.encode("utf-8"))
+    except UnicodeEncodeError:  # a lone surrogate, which JSON allows
+        raise PasswordPolicyError("password must be valid Unicode text") from None
     if not PASSWORD_MIN_BYTES <= size <= PASSWORD_MAX_BYTES:
         raise PasswordPolicyError(f"password must be {PASSWORD_MIN_BYTES}-{PASSWORD_MAX_BYTES} bytes (UTF-8)")
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")

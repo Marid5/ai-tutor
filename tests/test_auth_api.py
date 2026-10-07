@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from app.auth import token_hash
 from tests.helpers import PASSWORD, api_db, api_user_id, sign_in
 
@@ -220,3 +222,80 @@ def test_expired_sessions_are_purged_at_login(signed_in):
         )
     assert _login(signed_in).status_code == 200
     assert api_db(signed_in).scalar("SELECT count(*) FROM auth_sessions WHERE token_hash='old'") == 0
+
+
+def test_unknown_user_still_costs_one_password_check(client, monkeypatch):
+    from app.api import accounts
+
+    calls = []
+    real = accounts.verify_password
+
+    def counting(password, password_hash):
+        calls.append(password_hash)
+        return real(password, password_hash)
+
+    monkeypatch.setattr(accounts, "verify_password", counting)
+    assert _login(client, "nobody").status_code == 401
+    assert calls == [accounts._DUMMY_HASH]
+    calls.clear()
+    assert _login(client, "not a valid name!").status_code == 401
+    assert calls == [accounts._DUMMY_HASH]
+    calls.clear()
+    sign_in(client)
+    calls.clear()
+    assert _login(client, password="wrong password").status_code == 401
+    assert len(calls) == 1 and calls[0] != accounts._DUMMY_HASH
+
+
+def test_password_change_failures_are_rate_limited(make_client):
+    client = sign_in(make_client(login_user_fail_limit=2))
+    for _ in range(2):
+        response = client.post(
+            "/api/password", json={"current": "not the password", "new": "another passphrase"}
+        )
+        assert response.status_code == 403
+    blocked = client.post("/api/password", json={"current": PASSWORD, "new": "another passphrase"})
+    assert blocked.status_code == 429
+    assert blocked.json() == {"detail": "too many attempts, try again later"}
+    assert _login(client).status_code == 200, "the password did not change"
+
+
+def test_password_change_rotates_the_current_session(signed_in):
+    old_raw = signed_in.cookies[COOKIE]
+    response = signed_in.post("/api/password", json={"current": PASSWORD, "new": "a brand new passphrase"})
+    assert response.status_code == 204
+    new_raw = response.cookies[COOKIE]
+    assert new_raw != old_raw
+    assert signed_in.get("/api/account").status_code == 200
+    assert api_db(signed_in).scalar("SELECT count(*) FROM auth_sessions") == 1
+    assert (
+        api_db(signed_in).scalar(
+            "SELECT count(*) FROM auth_sessions WHERE token_hash=?", (token_hash(old_raw),)
+        )
+        == 0
+    )
+    signed_in.cookies.set(COOKIE, old_raw)
+    assert signed_in.get("/api/account").status_code == 401
+
+
+def test_signing_in_again_replaces_the_presented_session(signed_in):
+    old_raw = signed_in.cookies[COOKIE]
+    assert _login(signed_in).status_code == 200
+    assert signed_in.cookies[COOKIE] != old_raw
+    assert api_db(signed_in).scalar("SELECT count(*) FROM auth_sessions") == 1
+    assert signed_in.get("/api/account").status_code == 200
+    signed_in.cookies.set(COOKIE, old_raw)
+    assert signed_in.get("/api/account").status_code == 401
+
+
+def test_a_lone_surrogate_password_is_refused_not_a_server_error(make_client):
+    """JSON may carry a lone surrogate escape; such text is not a password (422, never 500)."""
+    client = sign_in(make_client(registration_open=True))
+
+    def post(path, body):
+        return client.post(path, content=json.dumps(body), headers={"Content-Type": "application/json"})
+
+    assert post("/api/register", {"username": "newbie", "password": "valid start \ud800"}).status_code == 422
+    assert post("/api/login", {"username": "learner", "password": "pass \ud800 word"}).status_code == 422
+    assert post("/api/password", {"current": PASSWORD, "new": "a new pass \ud800"}).status_code == 422
+    assert _login(client).status_code == 200

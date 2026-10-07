@@ -634,7 +634,7 @@ def _listed_chapter_ids(raw: Any) -> list[str] | None:
     return list(dict.fromkeys(valid))
 
 
-def _load(content_dir: Path) -> tuple[Program | None, list[str]]:
+def _load(content_dir: Path) -> tuple[Program | None, list[str], list[str]]:
     errors: list[str] = []
     raw_program, problem = _read_yaml(content_dir / PROGRAM_FILE, PROGRAM_FILE)
     if problem:
@@ -675,11 +675,12 @@ def _load(content_dir: Path) -> tuple[Program | None, list[str]]:
                 errors.append(f"{CHAPTERS_DIR}/{path.name}: not listed in {PROGRAM_FILE} chapters")
 
     if header is None or not chapters:
-        return None, errors
+        return None, errors, []
     fields = {name: getattr(header, name) for name in _ProgramHeader.model_fields}
     program = Program(**fields, chapters=chapters)
-    errors.extend(validate_program(program).errors)
-    return program, errors
+    report = validate_program(program)
+    errors.extend(report.errors)
+    return program, errors, report.warnings
 
 
 def load_program(content_dir: Path) -> Program:
@@ -689,7 +690,12 @@ def load_program(content_dir: Path) -> Program:
     them. Program-level checks (the exercise gate, id uniqueness across
     chapters) run only when `program.yaml` itself is valid.
     """
-    program, errors = _load(Path(content_dir))
+    return load_program_with_warnings(content_dir)[0]
+
+
+def load_program_with_warnings(content_dir: Path) -> tuple[Program, list[str]]:
+    """`load_program`, also returning the validator's warnings (problems that do not block)."""
+    program, errors, warnings = _load(Path(content_dir))
     if errors or program is None:
         raise ContentError(errors)
-    return program
+    return program, warnings

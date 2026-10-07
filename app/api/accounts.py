@@ -62,6 +62,7 @@ class SettingsUpdate(BaseModel):
 
 
 def _start_session(db: Database, settings: Settings, response: Response, user_id: str) -> None:
+    """Issue a fresh session token in the cookie; only its hash is stored."""
     raw, digest = new_session_token()
     expires = utc_now() + timedelta(days=settings.session_days)
     db.create_auth_session(digest, user_id, expires.isoformat())
@@ -127,6 +128,11 @@ def login(
         raise HTTPException(status_code=401, detail=BAD_LOGIN)
 
     db.purge_expired_sessions(utc_now().isoformat())
+    # Signing in again replaces the browser's previous session rather than
+    # leaving it alive (and valid) in the database.
+    previous = request.cookies.get(SESSION_COOKIE)
+    if previous:
+        db.delete_auth_session(token_hash(previous))
     _start_session(db, settings, response, user["id"])
     return {"username": user["username"]}
 
@@ -152,18 +158,28 @@ def account(user: CurrentUser, db: DB) -> dict:
 
 
 @router.post("/password", status_code=204)
-def change_password(body: PasswordChange, user: CurrentUser, db: DB) -> Response:
+def change_password(
+    body: PasswordChange, user: CurrentUser, db: DB, settings: AppSettings, limiter: Limiter
+) -> Response:
+    # Guessing the current password from a hijacked session is limited like sign-in.
+    bucket = f"password-fail-user:{user.user_id}"
+    if not limiter.allowed(bucket, settings.login_user_fail_limit, LOGIN_WINDOW):
+        raise HTTPException(status_code=429, detail=TOO_MANY)
     record = db.get_user(user.user_id)
     if record is None or not verify_password(body.current, record["password_hash"]):
+        limiter.hit(bucket)
         raise HTTPException(status_code=403, detail="current password is incorrect")
     try:
         password_hash = hash_password(body.new)
     except PasswordPolicyError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     db.set_password(user.user_id, password_hash)
-    # Whoever else holds a session (a lost phone, a shared computer) is signed out.
-    db.delete_user_sessions(user.user_id, except_hash=user.token_hash)
-    return Response(status_code=204)
+    # Every session is signed out (a lost phone, a shared computer), and the
+    # one making the change continues under a new token.
+    db.delete_user_sessions(user.user_id)
+    response = Response(status_code=204)
+    _start_session(db, settings, response, user.user_id)
+    return response
 
 
 def _settings_view(db: Database, user_id: str) -> dict:

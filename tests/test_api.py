@@ -718,3 +718,63 @@ def test_health_reports_the_seeded_course(client):
     body = client.get("/api/health").json()
     assert (body["chapters"], body["lessons"], body["cards"]) == (1, 2, 4)
     assert body["program_version"] == load_program(FIXTURE_CONTENT).program_version
+
+
+# ------------------------------------------------------------ hostile input
+@pytest.mark.parametrize(
+    "poison",
+    [
+        {"ts": "0001-01-01T00:00:00+05:00"},
+        {"timing_version": 2**70},
+        {"timing_version": 5000},
+        {"answer": "\ud800"},
+        {"session_id": "first\udfff"},
+    ],
+)
+def test_one_poisoned_event_does_not_fail_the_batch(signed_in, poison):
+    payload = start(signed_in, "first")
+    triage, other = payload["steps"][0], payload["steps"][1]
+    events = [{**step_event("first", triage, "know"), **poison}, step_event("first", other, "know")]
+    # Sent as ASCII JSON: a lone surrogate is legal there as a `\ud800` escape.
+    response = signed_in.post(
+        "/api/answers", content=json.dumps({"events": events}), headers={"Content-Type": "application/json"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [result["rejected"] for result in body["results"]] == ["invalid", None]
+    assert body["results"][1]["accepted"] is True
+    assert api_db(signed_in).scalar("SELECT count(*) FROM events") == 1
+
+
+def test_a_future_timestamp_is_stored_as_now(signed_in):
+    payload = start(signed_in, "first")
+    event = {**step_event("first", payload["steps"][0], "know"), "ts": "2999-01-01T00:00:00Z"}
+    assert post_answers(signed_in, [event])["results"][0]["accepted"] is True
+    stored = api_db(signed_in).scalar("SELECT ts FROM events")
+    assert stored < "2999"
+
+
+def test_a_hostile_kind_is_neither_logged_nor_echoed_raw(signed_in, caplog):
+    payload = start(signed_in, "first")
+    kind = "choice\nFAKE LOG LINE " + "x" * 500
+    event = {**step_event("first", payload["steps"][0], "know"), "kind": kind, "step_id": "a\nb"}
+    with caplog.at_level("WARNING"):
+        body = post_answers(signed_in, [event])
+    detail = body["results"][0]["detail"]
+    assert body["results"][0]["rejected"] == "invalid"
+    assert "\n" not in detail and "FAKE LOG LINE" in detail
+    assert len(detail) <= 100
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("FAKE LOG LINE" in message for message in messages)
+    assert all("\n" not in message and len(message) < 300 for message in messages)
+
+
+def test_two_learners_may_use_the_same_event_id(client):
+    for username in ("alice", "bob"):
+        sign_in(client, username)
+        payload = start(client, "first")
+        result = answer(client, "first", payload["steps"][0], "know", event_id="buffer-1")
+        assert (result["accepted"], result["duplicate"]) == (True, False), username
+        replay = answer(client, "first", payload["steps"][0], "know", event_id="buffer-1")
+        assert replay["duplicate"] is True
+    assert api_db(client).scalar("SELECT count(*) FROM events WHERE id='buffer-1'") == 2

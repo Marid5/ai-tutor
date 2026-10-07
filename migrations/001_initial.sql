@@ -121,8 +121,10 @@ CREATE INDEX idx_card_state_due ON card_state(user_id, state, due);
 -- are derived from events that carry the card's current check_version, so a
 -- card whose answer changed starts over without its history being deleted,
 -- and still starts over if the edit is later reverted.
+-- Event ids are chosen by the client and are unique per learner only: one
+-- learner's ids can never collide with, or reveal, another learner's.
 CREATE TABLE events (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   ts TEXT NOT NULL,
   session_id TEXT NOT NULL,
@@ -134,7 +136,8 @@ CREATE TABLE events (
   elapsed_ms INTEGER NOT NULL DEFAULT 0,
   timing_version INTEGER,
   step_id TEXT,
-  check_version TEXT NOT NULL
+  check_version TEXT NOT NULL,
+  PRIMARY KEY (user_id, id)
 );
 -- Idempotency: a replayed answer must not be counted twice.
 CREATE UNIQUE INDEX events_user_session_step_unique

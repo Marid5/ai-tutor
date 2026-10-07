@@ -154,7 +154,13 @@ def current_session(
     program: CourseProgram,
     session_id: str | None = Query(default=None, min_length=1, max_length=200),
 ) -> dict:
-    """The given session, or else what to continue: a lesson in progress, then review."""
+    """The given session, or else what to continue: a lesson in progress, then review.
+
+    Despite being a GET, this may write, idempotently: it completes a lesson
+    found with nothing left to ask, and with no id it opens today's next
+    review sitting when one is due (as the review start would). Repeating the
+    request changes nothing further.
+    """
     if session_id is not None:
         payload = _session_payload(db, user.user_id, session_id)
         if payload is None:
@@ -183,6 +189,14 @@ class AnswerBatch(BaseModel):
     # Items are checked one by one by the engine, so one malformed answer is
     # reported in its own result instead of failing the whole batch.
     events: list[Any] = Field(min_length=1, max_length=ANSWER_BATCH_MAX)
+
+
+# Client-supplied text goes into logs only as a bounded repr, never raw.
+LOG_QUOTE_MAX = 100
+
+
+def _bounded(value: Any) -> Any:
+    return value[:LOG_QUOTE_MAX] if isinstance(value, str) else value
 
 
 _NOT_AN_OBJECT = AnswerOutcome("invalid", None, "each event must be a JSON object")
@@ -219,7 +233,7 @@ def answers(batch: AnswerBatch, user: CurrentUser, db: DB, program: CourseProgra
         else:
             outcome = _NOT_AN_OBJECT
         if outcome.status == "invalid":
-            logger.warning("rejected answer from user_id=%s: %s", user.user_id, outcome.detail)
+            logger.warning("rejected answer from user_id=%s: %r", user.user_id, _bounded(outcome.detail))
         results.append(_result(event, outcome))
 
     last = batch.events[-1] if isinstance(batch.events[-1], dict) else {}
@@ -233,10 +247,10 @@ def answers(batch: AnswerBatch, user: CurrentUser, db: DB, program: CourseProgra
     conflict = bool(first and first["id"] == last.get("step_id"))
     if conflict:
         logger.error(
-            "continuation repeats the answered step user_id=%s session_id=%s step_id=%s status=%s",
+            "continuation repeats the answered step user_id=%s session_id=%r step_id=%r status=%s",
             user.user_id,
-            session_id,
-            last.get("step_id"),
+            _bounded(session_id),
+            _bounded(last.get("step_id")),
             results[-1]["rejected"] or ("duplicate" if results[-1]["duplicate"] else "accepted"),
         )
     return {"results": results, "session": payload, "state_conflict": conflict}

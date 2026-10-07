@@ -106,3 +106,74 @@ def test_app_refuses_to_start_on_invalid_content(make_client, tmp_path):
     with pytest.raises(ContentError) as error:
         make_client(content_dir=content)
     assert any("duplicate card id" in message for message in error.value.errors)
+
+
+def test_oversized_api_bodies_are_refused(client):
+    big = {"username": "learner", "password": "x" * (300 * 1024)}
+    declared = client.post("/api/login", json=big)
+    assert declared.status_code == 413
+    assert declared.json() == {"detail": "request body too large"}
+    _assert_security_headers(declared)
+
+    def chunks():
+        for _ in range(300):
+            yield b"x" * 1024
+
+    streamed = client.post("/api/login", content=chunks(), headers={"Content-Type": "application/json"})
+    assert streamed.status_code == 413
+    assert api_db_rows(client) == 0
+    # A body just under the limit still reaches the route.
+    assert client.post("/api/login", json={"username": "a", "password": "x" * 1000}).status_code == 401
+
+
+def api_db_rows(client) -> int:
+    return client.app.state.db.scalar("SELECT count(*) FROM rate_limit_hits")
+
+
+async def _run(middleware, messages, headers):
+    sent = []
+
+    async def receive():
+        return messages.pop(0)
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "path": "/api/login", "method": "POST", "headers": headers}
+    await middleware(scope, receive, send)
+    return sent
+
+
+def test_body_limit_counts_streamed_chunks_despite_a_lying_length():
+    import asyncio
+
+    from app.security import BodySizeLimitMiddleware
+
+    reached = []
+
+    async def app(scope, receive, send):
+        reached.append(await receive())
+
+    middleware = BodySizeLimitMiddleware(app, limit=10)
+    chunks = [{"type": "http.request", "body": b"123456", "more_body": True}] * 2
+    sent = asyncio.run(_run(middleware, list(chunks), [(b"content-length", b"5")]))
+    assert sent[0]["status"] == 413 and not reached
+
+    ok = [
+        {"type": "http.request", "body": b"12345", "more_body": True},
+        {"type": "http.request", "body": b"678"},
+    ]
+    asyncio.run(_run(middleware, ok, []))
+    assert reached == [{"type": "http.request", "body": b"12345678", "more_body": False}]
+
+
+def test_head_requests_for_uptime_probes(make_client, tmp_path):
+    static = tmp_path / "site"
+    static.mkdir()
+    (static / "index.html").write_text("<!doctype html>index", encoding="utf-8")
+    (static / "app.js").write_text("console.log(1)", encoding="utf-8")
+    client = make_client(static_dir=static)
+    for path in ("/", "/app.js", "/lessons/first", "/api/health"):
+        response = client.head(path)
+        assert response.status_code == 200, path
+        assert response.content == b"", path

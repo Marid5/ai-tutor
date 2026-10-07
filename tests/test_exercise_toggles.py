@@ -6,7 +6,16 @@ import pytest
 
 from app import curriculum, session
 from app.database import Database
-from tests.helpers import Learner, fake_now, first_of, lesson_ref, submit, wrong_answer
+from tests.helpers import (
+    Learner,
+    fake_now,
+    first_of,
+    lesson_ref,
+    make_user,
+    right_answer,
+    submit,
+    wrong_answer,
+)
 
 CARD = "capital-of-france"
 OTHER = "largest-planet"
@@ -360,6 +369,12 @@ def test_client_fields_are_type_and_size_checked(db, tmp_path):
         {"ts": "2026-10-07T10:00:00"},
         {"elapsed_ms": True},
         {"timing_version": "2"},
+        {"timing_version": -1},
+        {"timing_version": 1001},
+        {"timing_version": 2**70},
+        {"ts": "0001-01-01T00:00:00+05:00"},  # leaves the datetime range when moved to UTC
+        {"answer": "\ud800"},
+        {"session_id": "first\udfff"},
     ):
         outcome = session.record_answer(
             db, learner.user, {**base, **broken}, program=learner.program, now=fake_now()
@@ -396,3 +411,46 @@ def test_primary_with_an_unissued_attempt_is_stale(db, tmp_path):
     assert learner.answer(primary, event_id="second-try").status == "duplicate_step"
     # Once checked, no further primary check of the card is accepted in this lesson.
     assert learner.answer(minted).status == "stale"
+
+
+def test_a_future_timestamp_is_taken_as_now(db, tmp_path):
+    learner = Learner(db, tmp_path, exercises={"triage": False})
+    primary = learner.start()[0]
+    event = {
+        "session_id": "first",
+        "card_id": primary["card_id"],
+        "kind": primary["kind"],
+        "step_id": primary["id"],
+        "answer": "Paris",
+        "elapsed_ms": 1,
+        "ts": "2099-01-01T00:00:00+00:00",
+    }
+    outcome = session.record_answer(db, learner.user, event, program=learner.program, now=fake_now())
+    assert outcome.status == "inserted"
+    assert db.scalar("SELECT ts FROM events") == fake_now().isoformat()
+
+
+def test_unknown_kind_is_quoted_and_bounded_in_the_detail(db, tmp_path):
+    learner = Learner(db, tmp_path)
+    triage = first_of(learner.start(), CARD, "triage:")
+    kind = "evil\nkind" + "x" * 200
+    outcome = learner.answer({**triage, "kind": kind})
+    assert outcome.status == "invalid"
+    assert "\n" not in outcome.detail
+    assert "'evil\\nkind" in outcome.detail
+    assert len(outcome.detail) < 100
+
+
+def test_event_ids_are_scoped_to_their_learner(db, tmp_path):
+    learner = Learner(db, tmp_path, exercises={"triage": False})
+    other = make_user(db, "other-learner")
+    primary = learner.start()[0]
+    db.start_lesson(other, "first")
+    assert learner.answer(primary, event_id="shared-id").status == "inserted"
+    row = learner.row(primary["card_id"])
+    outcome = submit(
+        db, other, learner.program, "first", primary, right_answer(row, primary), event_id="shared-id"
+    )
+    assert outcome.status == "inserted", "another learner's event id is not a duplicate"
+    assert learner.answer(primary, event_id="shared-id").status == "duplicate_event"
+    assert db.scalar("SELECT count(*) FROM events WHERE id='shared-id'") == 2

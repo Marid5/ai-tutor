@@ -18,9 +18,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 
-from app.content import ContentError, load_program, validate_program
+from app.content import load_program_with_warnings
 from app.database import Database
-from app.security import RateLimiter, SecurityHeadersMiddleware
+from app.security import BodySizeLimitMiddleware, RateLimiter, SecurityHeadersMiddleware
 from app.settings import ROOT, Settings, load_settings
 
 from .api import accounts, learning
@@ -29,6 +29,8 @@ from .api.deps import DB, AppSettings, CourseProgram
 logger = logging.getLogger(__name__)
 
 NOT_FOUND = "not found"
+# Answer batches are the largest API bodies; 256 KB leaves ample room.
+API_BODY_LIMIT = 256 * 1024
 _ALL_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 
@@ -39,11 +41,21 @@ def _read_version() -> str:
         return "unknown"
 
 
+def _printable(part: object) -> str:
+    """A location part (it can be a client-chosen key) without raw control characters, bounded."""
+    text = str(part)
+    if not text.isprintable():
+        text = repr(text)
+    return text if len(text) <= 64 else text[:61] + "..."
+
+
 def _validation_message(error: RequestValidationError) -> str:
     """Pydantic's error list as one readable sentence, so every error body is `{"detail": str}`."""
     parts = []
     for item in error.errors():
-        where = ".".join(str(part) for part in item.get("loc", ()) if part not in ("body", "query", "path"))
+        where = ".".join(
+            _printable(part) for part in item.get("loc", ()) if part not in ("body", "query", "path")
+        )
         parts.append(f"{where}: {item.get('msg')}" if where else str(item.get("msg")))
     return "; ".join(parts) or "invalid request"
 
@@ -53,11 +65,9 @@ def create_app(settings: Settings) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db = Database(settings.database_path)
         db.migrate()
-        program = load_program(settings.content_dir)
-        report = validate_program(program)
-        if report.errors:
-            raise ContentError(report.errors)
-        for warning in report.warnings:
+        # Raises ContentError listing every problem, so invalid content stops start-up.
+        program, warnings = load_program_with_warnings(settings.content_dir)
+        for warning in warnings:
             logger.warning("content: %s", warning)
         db.upsert_program(program)
         db.purge_expired_sessions(datetime.now(UTC).isoformat())
@@ -71,13 +81,16 @@ def create_app(settings: Settings) -> FastAPI:
     # and the API is documented for the client, not published.
     app = FastAPI(title="AI Tutor", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
+    # Added last means outermost: the security headers also cover a 413.
+    app.add_middleware(BodySizeLimitMiddleware, limit=API_BODY_LIMIT)
     app.add_middleware(SecurityHeadersMiddleware)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": _validation_message(error)})
 
-    @app.get("/api/health")
+    # HEAD as well as GET, for uptime probes.
+    @app.api_route("/api/health", methods=["GET", "HEAD"])
     def health(request: Request, db: DB, settings: AppSettings) -> dict:
         def live(table: str) -> int:
             return db.scalar(f"SELECT count(*) FROM {table} WHERE retired=0") or 0
@@ -111,7 +124,7 @@ def create_app(settings: Settings) -> FastAPI:
         # and come back as the HTML shell with status 200.
         raise HTTPException(status_code=404, detail=NOT_FOUND)
 
-    @app.get("/{path:path}", include_in_schema=False)
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def client(path: str, settings: AppSettings) -> FileResponse:
         if path == "api":
             raise HTTPException(status_code=404, detail=NOT_FOUND)

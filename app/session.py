@@ -133,6 +133,10 @@ REVIEW_TOTAL_STEPS_MAX = 30
 EVENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # A real answer is a button label or the card's own answer; anything longer is not one.
 ANSWER_MAX_LENGTH = 500
+# Client timing-scheme version; small integers only (it is stored as SQLite INTEGER).
+TIMING_VERSION_MAX = 1000
+# How much of a client-supplied value an error message may quote.
+QUOTE_MAX = 64
 
 # Longest time a single answer may claim; longer means the tab was left open.
 ELAPSED_MS_MAX = 5 * 60 * 1000
@@ -469,16 +473,41 @@ def _fsrs_applies(mode: str, kind: str, step_id: str, correct: bool | None, row:
     return correct is False
 
 
+def _quoted(value: Any) -> str:
+    """A client value fit for an error message: `repr` (no raw control characters), bounded."""
+    text = repr(value)
+    return text if len(text) <= QUOTE_MAX else text[: QUOTE_MAX - 3] + "..."
+
+
+def _storable(value: Any) -> bool:
+    """Text SQLite can store: lone surrogates (valid in JSON strings) cannot be encoded as UTF-8."""
+    if not isinstance(value, str):
+        return True
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _event_time(event: dict[str, Any], now: datetime) -> str | None:
-    """The event's own timestamp (an offline answer keeps its time), or now."""
+    """The event's own timestamp (an offline answer keeps its time), or now.
+
+    A time in the future (a client clock running ahead) is taken as now, so
+    an answer is never dated after the moment the server applied it.
+    """
     raw = event.get("ts")
     if raw is None:
         return to_utc_iso(now)
     try:
         moment = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-    except ValueError:
+        if moment.utcoffset() is None:
+            return None
+        return to_utc_iso(min(moment, now))
+    except (ValueError, OverflowError):
+        # Unparseable, or a date so close to the calendar's edge that
+        # converting it to UTC leaves the representable range.
         return None
-    return to_utc_iso(moment) if moment.utcoffset() is not None else None
 
 
 def record_answer(
@@ -494,9 +523,11 @@ def record_answer(
     event_id = event.get("id")
     if event_id is not None and (not isinstance(event_id, str) or not EVENT_ID_RE.fullmatch(event_id)):
         return _invalid("id must be 1-64 letters, digits, '-' or '_'")
+    if not all(_storable(value) for value in event.values()):
+        return _invalid("text fields must be valid Unicode")
     kind = event.get("kind")
     if kind not in STEP_KINDS:
-        return _invalid(f"unknown step kind: {kind}")
+        return _invalid(f"unknown step kind: {_quoted(kind)}")
     elapsed = event.get("elapsed_ms", 0)
     if isinstance(elapsed, bool) or not isinstance(elapsed, int) or not 0 <= elapsed <= ELAPSED_MS_MAX:
         return _invalid(f"elapsed_ms must be between 0 and {ELAPSED_MS_MAX}")
@@ -516,8 +547,10 @@ def record_answer(
     if not isinstance(answer, str) or len(answer) > ANSWER_MAX_LENGTH:
         return _invalid(f"answer must be a string of at most {ANSWER_MAX_LENGTH} characters")
     timing_version = event.get("timing_version")
-    if timing_version is not None and (type(timing_version) is not int):
-        return _invalid("timing_version must be an integer")
+    if timing_version is not None and (
+        type(timing_version) is not int or not 0 <= timing_version <= TIMING_VERSION_MAX
+    ):
+        return _invalid(f"timing_version must be an integer between 0 and {TIMING_VERSION_MAX}")
     ts = _event_time(event, now)
     if ts is None:
         return _invalid("ts must be an ISO-8601 timestamp with a time zone")
@@ -546,7 +579,9 @@ def record_answer(
         if card_probed(row, card_events) or step_id != issued:
             # A replay of an answer already accepted is still reported as a
             # duplicate, so a client retrying its buffer sees the same result.
-            if event_id is not None and db.scalar("SELECT 1 FROM events WHERE id=?", (event_id,)):
+            if event_id is not None and db.scalar(
+                "SELECT 1 FROM events WHERE user_id=? AND id=?", (user_id, event_id)
+            ):
                 return AnswerOutcome("duplicate_event", correct, None)
             if any(past["step_id"] == step_id for past in card_events):
                 return AnswerOutcome("duplicate_step", correct, None)

@@ -424,7 +424,9 @@ class Database:
             )
             if cursor.rowcount == 1:
                 return "inserted"
-            if conn.execute("SELECT 1 FROM events WHERE id=?", (values["id"],)).fetchone():
+            if conn.execute(
+                "SELECT 1 FROM events WHERE user_id=? AND id=?", (user_id, values["id"])
+            ).fetchone():
                 return "duplicate_event"
             step_id = values["step_id"]
             if (

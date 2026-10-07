@@ -147,3 +147,71 @@ class SecurityHeadersMiddleware:
                 }
             )
             await send_with_headers({"type": "http.response.body", "body": body})
+
+
+class BodySizeLimitMiddleware:
+    """Refuses API request bodies over `limit` bytes with 413, before any route reads them.
+
+    The declared `Content-Length` is checked first; a body without one (or
+    one that lies) is counted while it streams in. An accepted body is
+    buffered and handed on unchanged; API bodies are small JSON documents.
+    """
+
+    def __init__(self, app: ASGIApp, limit: int, prefix: str = "/api") -> None:
+        self.app = app
+        self.limit = limit
+        self.prefix = prefix
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith(self.prefix):
+            await self.app(scope, receive, send)
+            return
+        for name, value in scope.get("headers", []):
+            if name.lower() == b"content-length" and value.strip().isdigit() and int(value) > self.limit:
+                await self._too_large(send)
+                return
+
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                # The client went away; let the app see that as usual.
+                break
+            body = message.get("body", b"")
+            size += len(body)
+            if size > self.limit:
+                await self._too_large(send)
+                return
+            chunks.append(body)
+            if not message.get("more_body", False):
+                break
+
+        replayed = False
+        pending = {"type": "http.request", "body": b"".join(chunks), "more_body": False}
+        if message["type"] != "http.request":
+            pending = message
+
+        async def replay() -> Message:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return pending
+            return await receive()
+
+        await self.app(scope, replay, send)
+
+    @staticmethod
+    async def _too_large(send: Send) -> None:
+        body = json.dumps({"detail": "request body too large"}).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
