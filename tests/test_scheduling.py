@@ -58,6 +58,38 @@ def test_day_rolls_over_at_start_hour():
     assert to_utc_iso(after) == "2026-10-08T04:00:00+00:00"
 
 
+def test_day_end_keeps_start_hour_across_spring_forward():
+    plan = Schedule(timezone="Europe/Paris", day_starts_at_hour=6)
+    tz = ZoneInfo("Europe/Paris")
+
+    end = day_end(datetime(2026, 3, 28, 12, tzinfo=tz), plan)
+
+    # Clocks jump forward on 29 March, so the learning day is 23 hours long.
+    assert end == datetime(2026, 3, 29, 6, 0, tzinfo=tz)
+    assert to_utc_iso(end) == "2026-03-29T04:00:00+00:00"
+
+
+def test_day_end_keeps_start_hour_across_fall_back():
+    plan = Schedule(timezone="Europe/Paris", day_starts_at_hour=6)
+    tz = ZoneInfo("Europe/Paris")
+
+    end = day_end(datetime(2026, 10, 25, 12, tzinfo=tz), plan)
+
+    # Clocks go back on 25 October, so the learning day is 25 hours long.
+    assert end == datetime(2026, 10, 26, 6, 0, tzinfo=tz)
+    assert to_utc_iso(end) == "2026-10-26T05:00:00+00:00"
+
+
+def test_naive_datetime_is_rejected():
+    plan = Schedule()
+    naive = datetime(2026, 10, 7, 12, 0)
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        local_now(plan, naive)
+    with pytest.raises(ValueError):
+        day_key(naive, plan)
+
+
 def test_local_now_uses_schedule_timezone():
     plan = Schedule(timezone="America/New_York")
 

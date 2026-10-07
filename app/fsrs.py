@@ -53,7 +53,10 @@ def _to_card(stored: StoredCard) -> Card:
 def schedule(stored: StoredCard, rating: Rating, now: datetime, schedule: Schedule) -> StoredCard:
     """Apply one review and return the card's new schedule.
 
-    `schedule` supplies the target retention and the longest allowed gap between reviews.
+    `schedule` is the program's `Schedule` (not this function): it supplies the target
+    retention and the longest allowed gap between reviews. `now` must be timezone-aware,
+    and every timestamp in `stored` (`due`, `last_review`) is an aware UTC ISO string,
+    as `to_utc_iso` produces.
     """
     # The scheduler works in UTC; so does everything stored.
     utc_now = now.astimezone(UTC)
