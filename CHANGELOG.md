@@ -23,7 +23,7 @@ First public release.
 - FSRS scheduling through py-fsrs 3.x with configurable retention, maximum interval, time zone and day start.
 - Scheduled reviews in sittings of up to 10 cards, lesson repeat and mixed practice that holds intervals instead of stretching them.
 - Session queues rebuilt from accepted answers, so a reload or a second device continues with the same step; idempotent answer batches; step ids pinned to the card's check version, with stale steps rejected.
-- Home board with the next lesson, readiness by chapter, and a progress screen with a 7-day review forecast.
+- Home board with the next lesson, readiness by chapter, and a progress screen with upcoming reviews for the next seven days that have any.
 
 #### Accounts and security
 
@@ -63,5 +63,5 @@ First public release.
 - A multilingual interface.
 - Import from Anki.
 - A service worker for offline use and full PWA icons.
-- Scripted firewall rollback in the server setup.
+- A setup script that arms and cancels the firewall rollback timer by itself (today a documented manual step).
 - Upgrade of py-fsrs beyond 3.x (4.x/5.x).

@@ -5,12 +5,14 @@
 
 Turn your notes into a spaced-repetition course — your coding agent writes the cards, AI Tutor teaches them.
 
+Anki makes you write every card. Here your coding agent writes them, a validator rejects bad ones, and the server — not you — decides when a card is learned.
+
 You give Claude Code or Codex your material: lesson notes, a photo of a textbook page, a PDF. The agent turns it into cards under a strict content contract, a validator checks every card, and a self-hosted web app teaches them with server-graded exercises and an FSRS review schedule. The repository ships with a demo course, "How LLMs work", so it runs on the first clone.
 
 <p align="center">
-  <img src="docs/screenshots/home-light.png" width="200" alt="Home screen on a phone, light theme: course progress, the next lesson, review and practice">
-  <img src="docs/screenshots/session-cloze-dark.png" width="200" alt="A fill-in-the-gap exercise on a phone, dark theme">
-  <img src="docs/screenshots/home-desktop.png" width="400" alt="Home screen on a desktop browser">
+  <img src="docs/screenshots/home-light.png" width="240" alt="Home screen on a phone, light theme: course progress, the next lesson, review and practice">
+  <img src="docs/screenshots/session-cloze-dark.png" width="240" alt="A fill-in-the-gap exercise on a phone, dark theme">
+  <img src="docs/screenshots/progress-light.png" width="240" alt="Progress screen: ready cards, upcoming reviews and the hardest cards">
 </p>
 
 ## Who it's for
@@ -32,7 +34,7 @@ flowchart LR
 
 1. **The agent writes the course.** [AGENTS.md](AGENTS.md) and the [add-content skill](.claude/skills/add-content/SKILL.md) tell it how: extract one fact per card, write three plausible wrong answers, propose the cards to you as a table, then file them into lessons with new ids.
 2. **The validator is the gate.** [The content contract](docs/content-contract.md) is enforced by code: unknown fields, duplicate ids and cards that no exercise can check are errors. The same check runs in `make validate`, CI, the Docker build and at app start.
-3. **The app teaches.** Each card gets a check the server grades; a miss opens a short ladder (a flash card, then each exercise kind again), and [FSRS](https://github.com/open-spaced-repetition/free-spaced-repetition-scheduler) schedules the next review. Editing a card's wording keeps everyone's progress; editing its answer starts that card over.
+3. **The app teaches.** Each card gets a check the server grades; a miss opens a short ladder (a flash card, then each of the card's closed exercises again), and [FSRS](https://github.com/open-spaced-repetition/free-spaced-repetition-scheduler) schedules the next review. Editing a card's wording keeps everyone's progress; editing its answer starts that card over.
 
 ## Quick start with your coding agent
 
@@ -42,7 +44,7 @@ Create your copy with *Use this template* on GitHub (or clone the repository), o
 Read AGENTS.md, then add a lesson from <file> to the course.
 ```
 
-Replace `<file>` with the path to your notes, PDF or photo. The agent shows the proposed cards for your edits, runs `make validate`, reports which exercises each chapter supports and commits the change. Then start the app as below and take the lesson. On a fresh copy nobody has studied the demo course yet, so you can also ask the agent to replace it with a course of your own.
+Replace `<file>` with the path to your notes, PDF or photo. The agent shows the proposed cards for your edits, runs `make validate`, reports which exercises each chapter supports and commits the change. Then start the app as below and take the lesson. You can also ask the agent to replace the demo course with your own.
 
 ## Manual quick start
 
@@ -54,7 +56,7 @@ make user NAME=you   # create your account (registration is closed by default)
 make dev             # backend on 127.0.0.1:8000 and the client with live reload
 ```
 
-Open http://localhost:5173 and sign in. The backend restarts by itself when anything in `content/` changes. `make serve` runs a production-like build on http://127.0.0.1:8000.
+Open http://localhost:5173 and sign in. The backend restarts by itself when a YAML file in `content/` changes. `make serve` runs a production-like build on http://127.0.0.1:8000.
 
 ## Exercise kinds
 
@@ -66,7 +68,7 @@ Open http://localhost:5173 and sign in. The backend restarts by itself when anyt
 | `cloze` | Fill the gap cut out of the answer, from buttons | yes |
 | `assemble` | Rebuild the answer from its shuffled words | yes |
 
-`choice`, `cloze` and `assemble` are closed: the server checks them, and only they can mark a card as known. Switches live in `program.yaml` and can be overridden per chapter; the [choose-exercises skill](.claude/skills/choose-exercises/SKILL.md) recommends a mix for your material. Rules, the learning ladder and readiness: [docs/exercises.md](docs/exercises.md).
+`choice`, `cloze` and `assemble` are closed: the server checks them, and only they can make a card ready. Switches live in `program.yaml` and can be overridden per chapter; the [choose-exercises skill](.claude/skills/choose-exercises/SKILL.md) recommends a mix for your material. Rules, the learning ladder and readiness: [docs/exercises.md](docs/exercises.md).
 
 ## Deploy
 

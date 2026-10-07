@@ -79,7 +79,7 @@ sequenceDiagram
 
 1. The client shows the first step of the session payload. A step carries its id, kind, prompt, answer, hint and note, plus the buttons, gap or tiles of a closed kind.
 2. The learner answers; the client posts the event to `/api/answers`. A batch takes up to 100 events, and each is applied on its own, so one bad event cannot block the rest.
-3. `record_answer` validates the event, refuses a step the engine would no longer issue (`stale`), grades a closed step from the answer text (a `correct` flag sent by the client is ignored), stores it and updates the schedule: in lessons and reviews, triage, flash and primary checks move it; in practice, only a missed primary check does (or any answer on a card with no schedule yet).
+3. `record_answer` validates the event, refuses a step the engine would no longer issue (`stale`), grades a closed step from the answer text (a `correct` flag sent by the client is ignored), stores it and updates the schedule: in lessons and reviews, triage, flash and primary checks move it; in practice, only a missed primary check does (or any primary-check answer on a card with no schedule yet).
 4. The response carries a result per event and the session's continuation, rebuilt from the database. The client shows the verdict, then the next step the server sent.
 
 ## Invariants
