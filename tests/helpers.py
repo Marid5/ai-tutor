@@ -1,20 +1,24 @@
 """Shared test helpers: row lookalikes, a throwaway course on disk, and answering steps.
 
 Fake rows stand in for `sqlite3.Row` in the pure engine tests; the course
-writer and `submit` drive the real engine against a real database.
+writer and `submit` drive the real engine against a real database; the
+`sign_in` / `answer` / `drain` family drives the same engine through the
+HTTP API.
 """
 
 from __future__ import annotations
 
 import uuid
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import bcrypt
 import yaml
 
 from app import curriculum, session
+from app.auth import hash_password
 from app.content import Program, load_program
 from app.database import Database
 from app.session import AnswerOutcome, record_answer
@@ -306,3 +310,106 @@ def lesson_ref(view: dict, lesson_id: str) -> dict:
 
 def first_of(queue: list[dict], card_id: str, prefix: str) -> dict:
     return next(step for step in queue if step["card_id"] == card_id and step["id"].startswith(prefix))
+
+
+# ------------------------------------------------------------ the HTTP API
+PASSWORD = "correct horse battery"
+# A low bcrypt cost keeps sign-in fast in tests; verification accepts any cost.
+_TEST_PASSWORD_HASH = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt(rounds=4)).decode()
+
+
+def sign_in(client: Any, username: str = "learner", password: str = PASSWORD) -> Any:
+    """Create an account directly in the database and sign the client in through the API."""
+    password_hash = _TEST_PASSWORD_HASH if password == PASSWORD else hash_password(password)
+    client.app.state.db.create_user(username, password_hash)
+    response = client.post("/api/login", json={"username": username, "password": password})
+    assert response.status_code == 200, response.text
+    return client
+
+
+def api_db(client: Any) -> Database:
+    return client.app.state.db
+
+
+def api_card(client: Any, card_id: str) -> dict[str, Any]:
+    card = api_db(client).card(card_id)
+    assert card is not None, card_id
+    return card
+
+
+def api_user_id(client: Any, username: str = "learner") -> str:
+    user = api_db(client).get_user_by_username(username)
+    assert user is not None, username
+    return user["id"]
+
+
+def step_event(
+    session_id: str,
+    step: dict[str, Any],
+    text: str,
+    *,
+    correct: bool | None = None,
+    event_id: str | None = None,
+) -> dict[str, Any]:
+    """An answer event the way the client sends it (no `id` unless replaying one on purpose)."""
+    event: dict[str, Any] = {
+        "session_id": session_id,
+        "step_id": step["id"],
+        "card_id": step["card_id"],
+        "kind": step["kind"],
+        "answer": text,
+        "elapsed_ms": 1200,
+        "timing_version": 2,
+    }
+    if correct is not None:
+        event["correct"] = correct
+    if event_id is not None:
+        event["id"] = event_id
+    return event
+
+
+def post_answers(client: Any, events: list[dict[str, Any]]) -> dict[str, Any]:
+    response = client.post("/api/answers", json={"events": events})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def answer(
+    client: Any,
+    session_id: str,
+    step: dict[str, Any],
+    text: str,
+    *,
+    correct: bool | None = None,
+    event_id: str | None = None,
+) -> dict[str, Any]:
+    """Answer one step through `/api/answers`: its result plus the continuation."""
+    body = post_answers(client, [step_event(session_id, step, text, correct=correct, event_id=event_id)])
+    return {**body["results"][0], "session": body["session"], "state_conflict": body["state_conflict"]}
+
+
+def drain(client: Any, payload: dict[str, Any], limit: int = 60) -> dict[str, Any]:
+    """Answer everything correctly until the session runs out of steps."""
+    session_id = payload["session_id"]
+    for _ in range(limit):
+        steps = payload["steps"]
+        if not steps:
+            return payload
+        step = steps[0]
+        result = answer(client, session_id, step, right_answer(api_card(client, step["card_id"]), step))
+        assert result["accepted"] and not result["duplicate"], result
+        payload = result["session"]
+    raise AssertionError("session did not terminate")
+
+
+def complete_lesson(client: Any, lesson_id: str) -> dict[str, Any]:
+    response = client.post(f"/api/lessons/{lesson_id}/start")
+    assert response.status_code == 200, response.text
+    return drain(client, response.json())
+
+
+def make_due(client: Any) -> None:
+    """Move every scheduled card of every learner to yesterday."""
+    past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    with api_db(client)._transaction() as conn:
+        conn.execute("UPDATE card_state SET due=? WHERE state != 'new'", (past,))
