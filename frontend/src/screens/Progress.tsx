@@ -84,8 +84,7 @@ export function Progress() {
   const [state, reload] = useLoader(getProgress);
   return (
     <div className="progress-screen">
-      <p className="eyebrow">Progress</p>
-      <h1>How it is going</h1>
+      <h1 tabIndex={-1}>Your progress</h1>
       {state.status === 'loading' && <Loading />}
       {state.status === 'error' && <LoadError error={state.error} onRetry={reload} />}
       {state.status === 'ready' && <Board data={state.data} />}

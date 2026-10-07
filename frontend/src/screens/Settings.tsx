@@ -3,6 +3,7 @@ import {
   ApiError, changePassword, describeError, getAccount, getHealth, getSettings, updateSettings,
   type Account, type Health, type Settings as SettingsData,
 } from '../api';
+import { Field } from '../components/Field';
 import { LoadError, Loading } from '../components/Loading';
 import { THEME_OPTIONS, applyTheme, readTheme, saveTheme, type ThemePreference } from '../theme';
 import { useLoader } from '../useLoader';
@@ -112,19 +113,12 @@ function PasswordForm() {
   return (
     <form className="form" onSubmit={submit} noValidate aria-labelledby="password-title">
       <h2 id="password-title" className="card-title">Change password</h2>
-      <label className="field">
-        <span className="field-label">Current password</span>
-        <input type="password" value={current} onChange={e => setCurrent(e.target.value)} autoComplete="current-password" required />
-      </label>
-      <label className="field">
-        <span className="field-label">New password</span>
-        <input type="password" value={next} onChange={e => setNext(e.target.value)} autoComplete="new-password" required />
-        <span className="field-hint">At least 10 characters.</span>
-      </label>
-      <label className="field">
-        <span className="field-label">Repeat new password</span>
-        <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" required />
-      </label>
+      <Field label="Current password" type="password" value={current} onChange={e => setCurrent(e.target.value)}
+        autoComplete="current-password" required />
+      <Field label="New password" type="password" value={next} onChange={e => setNext(e.target.value)}
+        autoComplete="new-password" required hint="At least 10 characters." />
+      <Field label="Repeat new password" type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+        autoComplete="new-password" required />
       {message && (
         <p className={message.kind === 'error' ? 'form-error' : 'form-success'} role={message.kind === 'error' ? 'alert' : 'status'}>
           {message.text}
@@ -141,8 +135,7 @@ export function Settings({ onSignOut }: { onSignOut: () => void }) {
   const [state, reload, replace] = useLoader(loadSettings);
   return (
     <div className="settings-screen">
-      <p className="eyebrow">Settings</p>
-      <h1>Settings</h1>
+      <h1 tabIndex={-1}>Settings</h1>
 
       <section className="card" aria-label="Appearance">
         <ThemePicker />

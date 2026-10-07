@@ -29,16 +29,18 @@ export function App() {
   const [starting, setStarting] = useState(false);
   const startingRef = useRef(false);
 
-  const loadHome = useCallback(async () => {
+  /** Load the home board; false when the server sees no session (sign-in shows instead). */
+  const loadHome = useCallback(async (): Promise<boolean> => {
     setHomeError(null);
     try {
       setChapters(await api.getChapters());
       setView(showHome);
     } catch (error) {
-      if (error instanceof api.ApiError && error.status === 401) return; // handled by onUnauthorized
+      if (error instanceof api.ApiError && error.status === 401) return false; // onUnauthorized shows sign-in
       setHomeError(error);
       setView(showHome);
     }
+    return true;
   }, []);
 
   useEffect(() => {
@@ -49,6 +51,17 @@ export function App() {
       setView({ name: 'signin' });
     });
   }, [loadHome]);
+
+  // When the learner moves to another screen, put focus on its heading so
+  // keyboard and screen-reader users start there. The first screen after
+  // loading keeps the browser's default focus.
+  const shownScreen = useRef(view.name);
+  useEffect(() => {
+    const previous = shownScreen.current;
+    shownScreen.current = view.name;
+    if (previous === view.name || previous === 'loading') return;
+    document.querySelector<HTMLElement>('main h1')?.focus();
+  }, [view.name]);
 
   useEffect(() => {
     document.title = config?.title ? `${config.title} · AI Tutor` : 'AI Tutor';
@@ -87,7 +100,7 @@ export function App() {
     return <Shell><Loading /></Shell>;
   }
   if (view.name === 'signin') {
-    return <Shell><SignIn config={config} onSignedIn={() => void loadHome()} /></Shell>;
+    return <Shell><SignIn config={config} onSignedIn={loadHome} /></Shell>;
   }
   if (view.name === 'session') {
     return <Shell courseTitle={config?.title}><Session session={view.session} onExit={() => void loadHome()} /></Shell>;

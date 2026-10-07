@@ -12,7 +12,7 @@ export function Session({ session, onExit }: SessionProps) {
   return (
     <div className="session">
       <p className="eyebrow">Study session</p>
-      <h1>{session.title}</h1>
+      <h1 tabIndex={-1}>{session.title}</h1>
       <button type="button" className="button secondary" onClick={onExit}>Back to home</button>
     </div>
   );

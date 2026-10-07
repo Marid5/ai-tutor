@@ -226,31 +226,44 @@ async function errorDetail(response: Response): Promise<string> {
   return `Request failed (${response.status})`;
 }
 
+const TIMEOUT_DETAIL = 'The server took too long to respond.';
+
 async function request<T>(path: string, { method = 'GET', body, signedIn = true }: RequestOptions = {}): Promise<T> {
   const controller = new AbortController();
+  // The timer covers the whole exchange, body included: a server that sends
+  // headers and then stalls must not leave the learner waiting forever.
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  let response: Response;
   try {
-    response = await fetch(path, {
-      method,
-      credentials: 'same-origin',
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch {
-    if (controller.signal.aborted) throw new ApiError(0, 'The server took too long to respond.', true);
-    throw new ApiError(0, 'Could not reach the server. Check your connection.');
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        method,
+        credentials: 'same-origin',
+        headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch {
+      if (controller.signal.aborted) throw new ApiError(0, TIMEOUT_DETAIL, true);
+      throw new ApiError(0, 'Could not reach the server. Check your connection.');
+    }
+
+    if (!response.ok) {
+      if (response.status === 401 && signedIn) unauthorizedListeners.forEach(listener => listener());
+      const detail = await errorDetail(response);
+      if (controller.signal.aborted) throw new ApiError(0, TIMEOUT_DETAIL, true);
+      throw new ApiError(response.status, detail);
+    }
+    if (response.status === 204) return undefined as T;
+    try {
+      return (await response.json()) as T;
+    } catch {
+      if (controller.signal.aborted) throw new ApiError(0, TIMEOUT_DETAIL, true);
+      throw new ApiError(response.status, 'The server sent a response the app could not read.');
+    }
   } finally {
     clearTimeout(timer);
   }
-
-  if (!response.ok) {
-    if (response.status === 401 && signedIn) unauthorizedListeners.forEach(listener => listener());
-    throw new ApiError(response.status, await errorDetail(response));
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
 }
 
 // ------------------------------------------------------------------ endpoints

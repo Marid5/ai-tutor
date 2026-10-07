@@ -25,7 +25,7 @@ export function Home({ course, chapters, onStart, notice, busy = false }: HomePr
   return (
     <div className="home">
       <section className="hero">
-        <h1>{course?.title || 'Your course'}</h1>
+        <h1 tabIndex={-1}>{course?.title || 'Your course'}</h1>
         {course?.description && <p className="lede">{course.description}</p>}
         <div className="readiness">
           <div className="readiness-line">

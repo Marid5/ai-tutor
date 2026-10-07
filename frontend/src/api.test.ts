@@ -50,6 +50,25 @@ describe('request timeout', () => {
     expect((settled as ApiError).timedOut).toBe(true);
   });
 
+  it('keeps the timeout running while the body is still arriving', async () => {
+    // Headers arrive at once, then the body stalls until the request is aborted.
+    mockFetch(async (_input, init) => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"username":'));
+        init.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    let settled: unknown = 'pending';
+    const pending = api.getAccount().then(value => { settled = value; }, error => { settled = error; });
+
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1);
+    expect(settled).toBe('pending');
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(settled).toBeInstanceOf(ApiError);
+    expect((settled as ApiError).timedOut).toBe(true);
+  });
+
   it('clears the timer once the server answers', async () => {
     mockFetch(async () => jsonResponse(200, { username: 'ada' }));
     await expect(api.getAccount()).resolves.toEqual({ username: 'ada' });
@@ -79,6 +98,14 @@ describe('responses', () => {
     expect(error).toBeInstanceOf(ApiError);
     expect(error.status).toBe(502);
     expect(error.detail).toBe('Request failed (502)');
+  });
+
+  it('raises ApiError when a successful response is not JSON', async () => {
+    mockFetch(async () => new Response('<html>captive portal</html>', { status: 200, headers: { 'Content-Type': 'text/html' } }));
+    const error = await api.getChapters().catch(e => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(200);
+    expect(error.timedOut).toBe(false);
   });
 
   it('reports a network failure as status 0', async () => {

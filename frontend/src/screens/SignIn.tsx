@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { ApiError, describeError, login, register, type Config } from '../api';
+import { Field } from '../components/Field';
 
 // The server's account rules, checked here first so the learner gets a clear
 // message before a round trip. The server enforces them regardless.
@@ -8,6 +9,9 @@ const PASSWORD_MIN_BYTES = 10;
 const PASSWORD_MAX_BYTES = 72;
 
 type Mode = 'signin' | 'signup';
+
+const COOKIE_NOT_KEPT =
+  'Signed in, but your browser did not keep the session cookie. If you are on plain http, set COOKIE_SECURE=false.';
 
 function signUpProblem(username: string, password: string): string | null {
   if (!USERNAME_PATTERN.test(username)) {
@@ -34,7 +38,8 @@ function failureMessage(error: unknown, mode: Mode): string {
 
 interface SignInProps {
   config: Config | null;
-  onSignedIn: () => void;
+  /** Load the signed-in app; resolves false when the server still sees no session. */
+  onSignedIn: () => Promise<boolean>;
 }
 
 export function SignIn({ config, onSignedIn }: SignInProps) {
@@ -56,9 +61,12 @@ export function SignIn({ config, onSignedIn }: SignInProps) {
     try {
       if (signingUp) await register(name, password);
       else await login(name, password);
-      onSignedIn();
+      // Loading the home screen is the first request that relies on the new
+      // session cookie; if the browser dropped it, say why instead of looping.
+      if (!(await onSignedIn())) setError(COOKIE_NOT_KEPT);
     } catch (failure) {
       setError(failureMessage(failure, mode));
+    } finally {
       setBusy(false);
     }
   };
@@ -72,23 +80,17 @@ export function SignIn({ config, onSignedIn }: SignInProps) {
     <div className="auth">
       <section className="auth-intro">
         <p className="eyebrow">Spaced repetition</p>
-        <h1>{config?.title || 'AI Tutor'}</h1>
+        <h1 tabIndex={-1}>{config?.title || 'AI Tutor'}</h1>
         {config?.description && <p className="lede">{config.description}</p>}
       </section>
 
       <form className="card form" onSubmit={submit} noValidate aria-labelledby="auth-title">
         <h2 id="auth-title">{signingUp ? 'Create your account' : 'Sign in'}</h2>
-        <label className="field">
-          <span className="field-label">Username</span>
-          <input name="username" value={username} onChange={e => setUsername(e.target.value)}
-            autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
-        </label>
-        <label className="field">
-          <span className="field-label">Password</span>
-          <input name="password" type="password" value={password} onChange={e => setPassword(e.target.value)}
-            autoComplete={signingUp ? 'new-password' : 'current-password'} required />
-          {signingUp && <span className="field-hint">At least 10 characters.</span>}
-        </label>
+        <Field label="Username" name="username" value={username} onChange={e => setUsername(e.target.value)}
+          autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
+        <Field label="Password" name="password" type="password" value={password} onChange={e => setPassword(e.target.value)}
+          autoComplete={signingUp ? 'new-password' : 'current-password'} required
+          hint={signingUp ? 'At least 10 characters.' : undefined} />
         {error && <p className="form-error" role="alert">{error}</p>}
         <button type="submit" className="button primary" disabled={busy}>
           {busy ? 'One moment…' : signingUp ? 'Create account' : 'Sign in'}

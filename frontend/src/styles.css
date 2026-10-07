@@ -15,6 +15,10 @@
   --ink-2: #566673;
   --line: #dde4ea;
   --line-strong: #c9d3db;
+  /* Borders that identify a control (inputs, switch track): at least 3:1
+     against the surfaces they sit on (WCAG 1.4.11). Light: 3.55:1 on
+     --surface, 3.28:1 on --bg, 3.16:1 on --surface-2. */
+  --control-border: #7a8a97;
   --accent: #0e6ba8;
   --accent-hover: #0b5b8f;
   --accent-ink: #ffffff;
@@ -48,6 +52,7 @@
     --ink-2: #9aabb9;
     --line: #26323d;
     --line-strong: #35434f;
+    --control-border: #637482;
     --accent: #5aaee3;
     --accent-hover: #7cc0ea;
     --accent-ink: #07121b;
@@ -73,6 +78,8 @@
   --ink-2: #9aabb9;
   --line: #26323d;
   --line-strong: #35434f;
+  /* Dark: 3.49:1 on --surface, 3.84:1 on --bg, 3.1:1 on --surface-2. */
+  --control-border: #637482;
   --accent: #5aaee3;
   --accent-hover: #7cc0ea;
   --accent-ink: #07121b;
@@ -98,6 +105,10 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* Keep focused and scrolled-to elements clear of the sticky header and the
+     fixed bottom tab bar. */
+  scroll-padding-top: 72px;
+  scroll-padding-bottom: calc(var(--tabbar) + 16px + env(safe-area-inset-bottom));
 }
 
 body {
@@ -155,6 +166,12 @@ button:disabled {
   outline-offset: 2px;
 }
 
+/* Screen headings receive focus programmatically when the screen changes;
+   they are not interactive, so they show no focus ring. */
+h1[tabindex="-1"]:focus {
+  outline: none;
+}
+
 .muted {
   color: var(--ink-2);
 }
@@ -194,18 +211,6 @@ button:disabled {
 .section-title {
   margin: 28px 0 12px;
   font-size: 17px;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
 /* ------------------------------------------------------------------ layout */
@@ -349,6 +354,10 @@ button:disabled {
 
   .has-tabs .content {
     padding-bottom: 56px;
+  }
+
+  html {
+    scroll-padding-bottom: 16px;
   }
 
   .content {
@@ -588,7 +597,7 @@ button:disabled {
   width: 100%;
   min-height: 48px;
   padding: 12px 14px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink);
@@ -672,6 +681,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   min-height: 40px;
+  border: 1.5px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--ink-2);
   font-size: 14px;
@@ -679,9 +689,10 @@ button:disabled {
 }
 
 .segmented input:checked + span {
+  border-color: var(--accent);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
-  color: var(--ink);
+  color: var(--accent);
 }
 
 .segmented input:focus-visible + span {
@@ -698,7 +709,7 @@ button:disabled {
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: var(--line-strong);
+  background: var(--control-border);
   transition: background-color 0.15s;
 }
 
