@@ -73,11 +73,12 @@ def test_day_end_keeps_start_hour_across_fall_back():
     plan = Schedule(timezone="Europe/Paris", day_starts_at_hour=6)
     tz = ZoneInfo("Europe/Paris")
 
-    end = day_end(datetime(2026, 10, 25, 12, tzinfo=tz), plan)
+    end = day_end(datetime(2026, 10, 24, 12, tzinfo=tz), plan)
 
-    # Clocks go back on 25 October, so the learning day is 25 hours long.
-    assert end == datetime(2026, 10, 26, 6, 0, tzinfo=tz)
-    assert to_utc_iso(end) == "2026-10-26T05:00:00+00:00"
+    # Clocks go back at 03:00 on 25 October, inside this learning day (24 Oct 06:00 to
+    # 25 Oct 06:00), so it is 25 hours long. Adding a flat 24 hours would end it at 05:00.
+    assert end == datetime(2026, 10, 25, 6, 0, tzinfo=tz)
+    assert to_utc_iso(end) == "2026-10-25T05:00:00+00:00"
 
 
 def test_naive_datetime_is_rejected():
