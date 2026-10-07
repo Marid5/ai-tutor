@@ -1,4 +1,4 @@
-.PHONY: setup test lint format validate user build dev serve
+.PHONY: setup test lint format validate user build dev serve e2e
 
 setup:
 	/opt/homebrew/bin/python3.12 -m venv .venv || python3 -m venv .venv
@@ -46,3 +46,9 @@ dev:
 serve: build
 	@test -x .venv/bin/uvicorn || { echo "No Python environment (.venv). Run 'make setup' first."; exit 1; }
 	set -a; [ -f .env ] && . ./.env; set +a; COOKIE_SECURE=false .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# Browser tests: Playwright starts the backend on a throwaway database with a
+# fresh build of the client (scripts/e2e-server.sh). SHOTS=1 also refreshes
+# docs/screenshots/.
+e2e:
+	npm --prefix frontend run e2e
