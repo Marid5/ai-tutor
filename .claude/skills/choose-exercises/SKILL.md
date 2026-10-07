@@ -36,7 +36,7 @@ Facts that drive every recommendation:
 Coverage rules:
 
 - Recommend a kind for a chapter only if **at least half** of its cards support it. Below that, the switch changes little; say how many cards would need new data instead (for example: "4 of 9 answers are 4 to 8 words").
-- Never recommend a setting that leaves a card with no rung. Before turning a kind off, check that every card of the chapter still supports another enabled kind (the rung one-liner in the `add-content` skill prints each card's rungs).
+- Never recommend a setting that leaves a card with no rung. Before recommending to turn a kind off, apply the switch locally and run `make validate`; the gate error names every card left without a rung; revert if any. Either way, leave the files as they were until the user confirms.
 - Set the program default for what most chapters need, and use a chapter override only for the chapters that differ. List only the kinds that differ: `exercises: {assemble: true}`.
 
 Improving coverage means editing cards (distractors with the option's word count, the option word for word in the answer, shorter answers). On cards learners have already studied, that resets their schedule for everyone, so propose it as a separate step and leave it to the `add-content` checklist.
@@ -50,7 +50,7 @@ Show the proposal and wait for the user's answer:
 | program | triage, choice, cloze | unchanged | | |
 | `foundations` | inherits | `+ assemble` | assemble 9/12 | short definitions; rebuilding them trains the wording |
 
-Edit `exercises` only after the user confirms. If the user said "proceed without asking", or nobody can answer (a headless run), apply the proposal and report it.
+Edit `exercises` only after the user confirms, or if they said in advance "proceed without asking". If nobody can answer (a headless run), do not edit: report the proposal table and stop.
 
 ## 4. Apply and verify
 

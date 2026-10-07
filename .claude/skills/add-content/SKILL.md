@@ -7,7 +7,7 @@ description: Turns a learner's material (photos, PDF, pasted text, notes) into A
 
 Turn material into cards that pass `make validate`, without touching anyone's existing progress. The field reference is `docs/content-contract.md`; the exercise rules are `docs/exercises.md`. Read both once before your first card.
 
-**Interactive or not.** By default you show the user a table of proposed cards and wait for their edits (step 5). Skip that wait when the user said "proceed without asking" (or equivalent), or when nobody can answer: a headless run, CI, or another agent running you as a batch job. Everything else, including the final report, stays the same.
+**Interactive or not.** By default you show the user a table of proposed cards and wait for their edits (step 6). Skip that wait when the user said "proceed without asking" (or equivalent), or when nobody can answer: a headless run, CI, or another agent running you as a batch job. Everything else, including the final report, stays the same.
 
 **Scope.** Change only files under `content/`. Do not change `exercises` switches here: if the material needs different exercise kinds, finish the cards and recommend the `choose-exercises` skill.
 
@@ -91,7 +91,7 @@ Under it, list facts you skipped and why, and any `[unreadable]` spots. Apply th
    foundations     17      17     17        12
    ```
 
-   Each number counts the chapter's cards whose data supports that kind, whether or not the chapter enables it. Your new cards should raise `cards` and, by the same amount, `choice`, and `cloze` where the chapter enables it. A smaller rise in `cloze` means some option is not word for word in its answer, or the distractors' word counts differ from the option. `assemble` rises only for answers of 4 to 8 words.
+   Each number counts the chapter's cards whose data supports that kind, whether or not the chapter enables it. Your new cards should raise `cards` by their number, `choice` by the same number and, by the same amount, `cloze`. A smaller rise in `cloze` means some option is not word for word in its answer, or the distractors' word counts differ from the option. `assemble` rises only for answers of 4 to 8 words.
 4. Check the rungs of each new card (closed kinds it will actually get, in order):
 
    ```bash
@@ -118,12 +118,12 @@ Under it, list facts you skipped and why, and any `[unreadable]` spots. Apply th
 | `warning: option has N words but the longest distractor has M` | Shorten the option or lengthen the distractors to the same word count. |
 | `warning: <kind> is enabled but no card in this chapter supports it` | Make the cards support it (see the checklist), or recommend `choose-exercises` to the user. |
 
-`make test` is for code changes. On content changes it runs `tests/test_demo_content.py`, which pins the shape of the bundled demo course and fails once the demo is extended or replaced. Mention that to the user; do not edit tests to make content pass.
+`make validate` is the gate for content. `make test` also passes on any valid course: `tests/test_demo_content.py` checks that whatever is in `content/` loads without errors or warnings, and skips its demo-specific checks once the course is no longer the bundled demo. Never edit tests to make content pass.
 
 ## 8. Report and commit
 
 1. `git status --short` must list only paths under `content/`.
-2. Commit: `git add content/` and `git commit -m "content: add <lesson title> lesson"` (or `chapter`). Push or open a pull request only when the user asked for it: `git switch -c content/<lesson-id>`, commit, `git push -u origin content/<lesson-id>`, `gh pr create --fill`.
+2. If the user asked for a pull request, first `git switch -c content/<lesson-id>`. Then `git add content/` and `git commit -m "content: add <lesson title> lesson"` (or `chapter`). For a pull request, then `git push -u origin content/<lesson-id>` and `gh pr create --fill`. Otherwise do not push.
 3. Report to the user:
    - the cards added, as the table from step 6, with the file and lesson they went to;
    - the final `make validate` output, verbatim, and what changed against the baseline;

@@ -19,9 +19,9 @@ Do not push red. CI runs the same checks and the deploy would not start anyway.
 
 ## 2. Push and follow the workflows
 
-1. `git push origin main`. Never force-push `main`.
-2. Find the CI run for the commit and wait for it: `gh run list --workflow CI --branch main --limit 1`, then `gh run watch <run-id> --exit-status`.
-3. Then the deploy: `gh run list --workflow Deploy --limit 1`, then `gh run watch <run-id> --exit-status`.
+1. `git push origin main`; if the change was merged through a pull request, skip the push. Never force-push `main`.
+2. Find the CI run for the commit and wait for it: `gh run list --workflow CI --commit "$(git rev-parse origin/main)" --limit 1`, then `gh run watch <run-id> --exit-status`.
+3. Then the deploy: `gh run list --workflow Deploy --commit "$(git rev-parse origin/main)" --limit 1`, then `gh run watch <run-id> --exit-status`.
    - A green run whose log says "Deployment is not configured" deployed nothing: the secrets are missing (see `deploy/setup-server.md`, step 9).
    - On failure, read `gh run view <run-id> --log-failed`. A health-check failure prints the last 50 lines of the app's log.
 

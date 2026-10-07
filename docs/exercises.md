@@ -79,14 +79,14 @@ flowchart TD
     rung -- "yes" --> next["Next rung, until all are done"]
     rung -- "no" --> retry["One retry of the same rung"]
     retry -- "right" --> next
-    retry -- "wrong again" --> stop["Review ends for this session"]
+    retry -- "wrong again" --> stop["Second miss closes the review;<br/>the card comes back through its schedule"]
     next --> later
     stop --> later["Not ready until a later primary check is right<br/>(review, lesson repeat or practice)"]
 ```
 
 1. **Triage** (when on) shows each card the learner has never met, with its answer. It is a first look, not a test: either way the card still gets its primary check. "Don't know" also adds a flash card later in the lesson. With triage off, new cards start directly at the primary check.
 2. **Primary check.** Each card of the lesson gets one primary check per session. A right answer makes the card ready.
-3. **After a miss** the card gets a short review: a flash card and each of its rungs again, in rung order, starting a few exercises after the miss. Each rung must be answered right before the next one appears; a wrong answer gets one retry, and a second miss on the same rung ends the review for this session instead of grinding on. In longer lessons the first rung can come before the flash card, so do not rely on an exact order. Ladder rungs are practice: they never make a card ready.
+3. **After a miss** the card gets a short review: a flash card and each of its rungs again, in rung order, starting a few exercises after the miss. Each rung must be answered right before the next one appears; a wrong answer gets one retry, and a second miss on the same rung closes the review; the card comes back through its schedule instead of grinding on. In longer lessons the first rung can come before the flash card, so do not rely on an exact order. Ladder rungs are practice: they never make a card ready.
 4. The lesson is done when nothing is left in its queue: every card has had its primary check, and every missed card has had its review.
 
 **Readiness** is exactly this: the last primary check of the card was answered right. Triage and flash are self-assessment and ladder rungs are scaffolding, so none of them counts. Progress in the app is the number of ready cards.
@@ -100,4 +100,4 @@ The schedule uses FSRS with the `schedule` settings from `program.yaml`. "I know
 
 ## Changing the settings later
 
-Exercise switches apply to the steps served from the next request on. Nobody's schedule is reset. An open session carries on: a step that the new settings no longer allow is rejected as stale and skipped. Changing `triage` affects only cards a learner has not met yet. What happens when the cards themselves change is described in [content-contract.md](content-contract.md#lifecycle-what-happens-when-content-changes).
+Exercise switches apply to the steps served once the app restarts with them (see the lifecycle in [content-contract.md](content-contract.md#lifecycle-what-happens-when-content-changes)). Nobody's schedule is reset. An open session carries on: a step that the new settings no longer allow is rejected as stale and skipped. Changing `triage` affects only cards a learner has not met yet. What happens when the cards themselves change is described in [content-contract.md](content-contract.md#lifecycle-what-happens-when-content-changes).

@@ -25,7 +25,7 @@ Collect from the user:
 |---|---|
 | 1. Install Docker | `docker compose version` prints a version. |
 | 2. Create the `deploy` user | `id deploy` lists the `docker` group. Tell the user plainly: **membership in `docker` is equivalent to root**, so this account is for deploys only. |
-| 3. Firewall | `ufw status verbose` allows only 22, 80, 443 (tcp, and udp for 443); `iptables -S DOCKER-USER` shows the `-i <interface> -j DROP` line; a **new** SSH login works; only then is the rollback timer stopped. |
+| 3. Firewall | `ufw status verbose` allows 22/tcp, 80/tcp, 443/tcp, 443/udp and `172.16.0.0/12` (containers to host), nothing else; `iptables -S DOCKER-USER` shows the `-i <interface> -j DROP` line; a **new** SSH login works; only then is the rollback timer stopped. |
 | 4. Get the code | The deploy key was added in GitHub with *Allow write access* unchecked; GitHub's host-key fingerprint was compared with the published one; `/srv/ai-tutor` is a clone owned by `deploy`. |
 | 5. Configure and start | `.env` exists (registration closed, `COOKIE_SECURE=true`, `TRUST_PROXY=true`); `data/` belongs to `10001`; `docker compose ps` shows `app` running; the first account exists (`docker compose exec app python -m app.cli list-users`). |
 | 6. Reverse proxy | `https://<domain>` opens the sign-in page with a valid certificate; the access log folder exists. |

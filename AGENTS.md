@@ -30,7 +30,7 @@ Most requests here are content work: add a lesson, extend a chapter, choose whic
 | Command | What it does |
 |---|---|
 | `make setup` | Creates `.venv`, installs Python and client dependencies, copies `.env.example` to `.env`, creates `data/` |
-| `make dev` | Backend on `127.0.0.1:8000` plus the client on `http://localhost:5173`; the backend restarts when `app/` or `content/*.yaml` changes |
+| `make dev` | Backend on `127.0.0.1:8000` plus the client on `http://localhost:5173`; the backend restarts when `app/` or any YAML file in `content/` changes |
 | `make validate` | Checks `content/` against the contract and prints the exercise coverage table |
 | `make test` | Backend tests |
 | `make lint` | `ruff check` and `ruff format --check` |
@@ -55,7 +55,7 @@ For content work only the validator is needed. If `make setup` cannot finish (fo
 - **Code changes:** `make test` and `make lint` must pass; for changes in `frontend/`, also the client checks above.
 - **Never weaken the validator, the content rules or their tests** to make content pass. Fix the content.
 - Code, comments and UI are in English. Card text is in the language the learner studies in, and `language` in `program.yaml` names it.
-- `tests/test_demo_content.py` pins the shape of the bundled demo course ("How LLMs work"). Once a learner's own course replaces the demo, that module fails by design: tell the user, and remove it only with their consent, in a separate commit.
+- `tests/test_demo_content.py` checks that whatever is in `content/` loads without errors or warnings; its checks on the shape of the bundled demo course ("How LLMs work") skip themselves once the course is a different one. Content changes never require editing tests.
 
 ## Skills
 
