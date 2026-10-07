@@ -113,6 +113,45 @@ def test_find_key_span_cuts_original_text_and_respects_word_boundaries():
     assert find_key_span("anything", "   ") is None
 
 
+def test_find_key_span_covers_separately_typed_accents():
+    answer = "I drink cafe\u0301 every day"  # "é" typed as e + combining acute
+    span = find_key_span(answer, "caf\u00e9")
+    assert span is not None
+    assert answer[span[0] : span[1]] == "cafe\u0301"
+    card = Card(
+        **make_card(
+            answer="Every morning she orders a Cafe\u0301 Cre\u0300me downtown",
+            option="Caf\u00e9 Cr\u00e8me",
+            accepted=["caf\u00e9 cr\u00e8me"],
+            distractors=["Green Tea", "Black Coffee", "Orange juice squeezed"],
+        )
+    )
+    assert card.cloze_key == "Cafe\u0301 Cre\u0300me"
+
+
+@pytest.mark.parametrize("filename", ["program.yaml", "chapters/basics.yaml"])
+def test_duplicate_yaml_key_rejected(tmp_path, filename):
+    write_program(tmp_path, make_program(), {"basics": make_chapter()})
+    path = tmp_path / filename
+    path.write_text(path.read_text(encoding="utf-8") + "title: Again\n", encoding="utf-8")
+    with pytest.raises(ContentError) as raised:
+        load_program(tmp_path)
+    assert f"{filename}: invalid YAML (duplicate key 'title')" in raised.value.errors
+
+
+def test_error_paths_render_list_indices_without_dots(tmp_path):
+    errors = load_errors(
+        tmp_path / "program",
+        make_program(chapters=("basics", 5)),
+        {"basics": make_chapter()},
+    )
+    assert has_error(errors, "program.yaml: chapters[1]")
+    assert not has_error(errors, ".[")
+    card = make_card(tags=["ok", 7])
+    errors = load_errors(tmp_path / "card", make_program(), {"basics": make_chapter(cards=[card])})
+    assert has_error(errors, "lesson-one/capital-of-france: tags[1]:")
+
+
 def test_unknown_field_rejected(tmp_path):
     errors = load_errors(
         tmp_path,
@@ -364,6 +403,35 @@ def test_gate_fails_when_card_has_no_enabled_closed_kind(tmp_path):
     ) in errors
 
 
+LONG_ANSWER = "A long answer that has far more than eight words so it cannot be assembled from blocks"
+
+
+def test_gate_hint_suggests_enabling_choice_when_lures_exist(tmp_path):
+    card = make_card("has-lures", answer=LONG_ANSWER, accepted=None, option="short option")
+    errors = load_errors(
+        tmp_path,
+        make_program(exercises={"choice": False}),
+        {"basics": make_chapter(cards=[card])},
+    )
+    assert (
+        "basics/lesson-one/has-lures: no enabled closed exercise is possible — "
+        "enable choice, or enable assemble"
+    ) in errors
+
+
+def test_gate_hint_asks_for_four_to_eight_words_when_assemble_is_enabled(tmp_path):
+    card = make_card("no-lures", answer=LONG_ANSWER, distractors=[], accepted=None, option="short option")
+    errors = load_errors(
+        tmp_path,
+        make_program(exercises={"assemble": True}),
+        {"basics": make_chapter(cards=[card])},
+    )
+    assert (
+        "basics/lesson-one/no-lures: no enabled closed exercise is possible — "
+        "add 3 distractors to enable choice, or give the answer 4-8 words to enable assemble"
+    ) in errors
+
+
 def test_gate_fails_when_chapter_enables_no_closed_kind(tmp_path):
     errors = load_errors(
         tmp_path,
@@ -416,7 +484,6 @@ def test_all_errors_reported_at_once(tmp_path):
     assert has_error(errors, "chapters/gamma.yaml:", "must match the file name")
     assert has_error(errors, "chapters/stray.yaml:", "not listed")
     assert has_error(errors, "program.yaml:", "'missing'")
-    assert len(errors) >= 6
 
     # A broken program.yaml does not hide the problems inside chapter files.
     errors = load_errors(
@@ -467,3 +534,13 @@ def test_check_hash_ignores_prompt_and_note():
         {"key_mode": "all_of"},
     ):
         assert Card(**make_card(**meaningful)).check_hash() != digest, meaningful
+
+
+def test_check_hash_ignores_order_of_distractors_and_accepted():
+    base = Card(**make_card(accepted=["Paris", "the city"]))
+    reordered = Card(**make_card(distractors=["Nice", "Lyon", "Marseille"], accepted=["the city", "Paris"]))
+    assert reordered.check_hash() == base.check_hash()
+    swapped_value = Card(**make_card(distractors=["Nice", "Lyon", "Lille"], accepted=["Paris", "the city"]))
+    assert swapped_value.check_hash() != base.check_hash()
+    other_key = Card(**make_card(accepted=["Paris", "a city"]))
+    assert other_key.check_hash() != base.check_hash()

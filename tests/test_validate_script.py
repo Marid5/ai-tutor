@@ -73,7 +73,9 @@ def test_warnings_are_printed_without_failing(tmp_path):
 
     result = run_script(target)
     assert result.returncode == 0, result.stdout
-    assert "warning: " in result.stdout
+    assert any(
+        line.startswith("warning: ") and "cloze is enabled" in line for line in result.stdout.splitlines()
+    )
 
 
 def test_missing_directory_exits_one(tmp_path):

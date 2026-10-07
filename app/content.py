@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Hashable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -123,7 +124,11 @@ def find_key_span(answer: str, key: str) -> tuple[int, int] | None:
     while start != -1:
         end = start + len(folded_key)
         if _is_boundary(folded_answer, start) and _is_boundary(folded_answer, end):
-            return offsets[start], offsets[end - 1] + 1
+            last = offsets[end - 1] + 1
+            # Accents typed as separate combining marks belong to the letter before them.
+            while last < len(answer) and unicodedata.combining(answer[last]):
+                last += 1
+            return offsets[start], last
         start = folded_answer.find(folded_key, start + 1)
     return None
 
@@ -302,14 +307,16 @@ class Card(BaseModel):
         Wording of the prompt, hints and notes is deliberately excluded: adding a
         paraphrase must not reset the schedule of a card that is already learned.
         The answer material is included: editing it makes the card a different
-        check than the one that was passed.
+        check than the one that was passed. The order of distractors and accepted
+        keys is excluded: reshuffling the lures does not change the question, so
+        it must not reset what learners already know.
         """
         payload = json.dumps(
             {
                 "answer": self.answer,
                 "effective_option": self.effective_option,
-                "distractors": self.distractors,
-                "effective_accepted": self.effective_accepted,
+                "distractors": sorted(self.distractors),
+                "effective_accepted": sorted(self.effective_accepted),
                 "key_mode": self.key_mode,
             },
             ensure_ascii=False,
@@ -547,11 +554,33 @@ def validate_program(program: Program) -> ValidationReport:
 
 
 # --------------------------------------------------------------------- loading
+class _DuplicateKeyError(yaml.YAMLError):
+    pass
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """A repeated key in a mapping is an error, not a silent "last one wins".
+
+    Otherwise a second `answer:` pasted into a card would quietly replace the
+    first and the author would never see why the card reads wrongly.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        if isinstance(node, yaml.MappingNode):
+            seen = set()
+            for key_node, _ in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if isinstance(key, Hashable) and key in seen:
+                    raise _DuplicateKeyError(f"duplicate key '{key}'")
+                seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def _read_yaml(path: Path, label: str) -> tuple[Any, str | None]:
     if not path.is_file():
         return None, f"{label}: file not found"
     try:
-        return yaml.safe_load(path.read_text(encoding="utf-8")), None
+        return yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader), None
     except (yaml.YAMLError, UnicodeDecodeError) as error:
         return None, f"{label}: invalid YAML ({' '.join(str(error).split())})"
 
@@ -580,7 +609,9 @@ def _format_errors(label: str, raw: Any, error: ValidationError) -> list[str]:
             if len(loc) >= 2 and loc[0] == "cards" and isinstance(loc[1], int):
                 scope.append(_item_id(_child(lesson_raw, "cards", loc[1]), "cards", loc[1]))
                 loc = loc[2:]
-        field_path = ".".join(f"[{part}]" if isinstance(part, int) else str(part) for part in loc)
+        field_path = ""
+        for part in loc:
+            field_path += f"[{part}]" if isinstance(part, int) else (f".{part}" if field_path else str(part))
         kind = item["type"]
         if kind == "extra_forbidden":
             text = f"unknown field '{field_path}'"
@@ -652,7 +683,12 @@ def _load(content_dir: Path) -> tuple[Program | None, list[str]]:
 
 
 def load_program(content_dir: Path) -> Program:
-    """Read and validate a content directory; raise `ContentError` listing every problem."""
+    """Read and validate a content directory; raise `ContentError` listing every problem.
+
+    Every file is checked on its own, so one run reports problems from all of
+    them. Program-level checks (the exercise gate, id uniqueness across
+    chapters) run only when `program.yaml` itself is valid.
+    """
     program, errors = _load(Path(content_dir))
     if errors or program is None:
         raise ContentError(errors)
