@@ -1,6 +1,7 @@
 """Client IP resolution, persistent rate limiting and response security headers."""
 
 import ipaddress
+import json
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -26,6 +27,23 @@ SECURITY_HEADERS: dict[str, str] = {
 _HIT_RETENTION = timedelta(days=1)
 
 
+# Peers allowed to vouch for `X-Forwarded-For`: this host and private networks
+# (a reverse proxy on the same machine or in the Docker network). Narrower than
+# `ipaddress.is_private`, which would also admit unspecified, link-local and
+# documentation addresses.
+_TRUSTED_PROXY_NETWORKS = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "127.0.0.0/8",
+        "::1/128",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "fc00::/7",
+    )
+)
+
+
 def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     try:
         return ipaddress.ip_address(value)
@@ -33,22 +51,33 @@ def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | Non
         return None
 
 
+def _is_trusted_proxy(peer: str) -> bool:
+    address = _parse_ip(peer)
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    if address is None:
+        return False
+    return any(address.version == net.version and address in net for net in _TRUSTED_PROXY_NETWORKS)
+
+
 def client_ip(peer: str | None, xff: str | None, trust_proxy: bool) -> str:
     """The address rate limits are keyed on.
 
-    With `trust_proxy`, the right-most `X-Forwarded-For` entry (the one our own
-    reverse proxy appended) is used, but only when the direct peer is a
-    loopback or private address, so a client reaching the app directly cannot
-    pick its own identity. Otherwise the direct peer is used.
+    With `trust_proxy`, the right-most non-empty `X-Forwarded-For` entry (the one
+    our own reverse proxy appended) is used, in canonical form, but only when
+    the direct peer is a loopback or private-network address, so a client
+    reaching the app directly cannot pick its own identity. Anything that is
+    not a plain IP address (ports, brackets, garbage) falls back to the peer.
     """
     if peer is None:
         return "unknown"
-    if trust_proxy and xff:
-        peer_ip = _parse_ip(peer)
-        if peer_ip is not None and (peer_ip.is_loopback or peer_ip.is_private):
-            forwarded = xff.rsplit(",", 1)[-1].strip()
-            if _parse_ip(forwarded) is not None:
-                return forwarded
+    if trust_proxy and xff and _is_trusted_proxy(peer):
+        entries = [entry.strip() for entry in xff.split(",")]
+        entries = [entry for entry in entries if entry]
+        if entries:
+            forwarded = _parse_ip(entries[-1])
+            if forwarded is not None:
+                return str(forwarded)
     return peer
 
 
@@ -60,7 +89,12 @@ class RateLimiter:
         self._clock = clock
 
     def allowed(self, bucket: str, limit: int, window: timedelta) -> bool:
-        """Whether `bucket` has fewer than `limit` hits within `window`. Does not count."""
+        """Whether `bucket` has fewer than `limit` hits within `window`. Does not count.
+
+        Check-then-`hit` is not atomic, so concurrent requests may overshoot the limit slightly.
+        """
+        if window > _HIT_RETENTION:
+            raise ValueError(f"window {window} exceeds the {_HIT_RETENTION} hit retention")
         since = (self._clock() - window).isoformat()
         return self._db.count_hits(bucket, since) < limit
 
@@ -101,14 +135,15 @@ class SecurityHeadersMiddleware:
             if started:
                 raise
             logger.exception("Unhandled error while handling %s", scope.get("path"))
+            body = json.dumps({"detail": "internal server error"}).encode()
             await send_with_headers(
                 {
                     "type": "http.response.start",
                     "status": 500,
                     "headers": [
-                        (b"content-type", b"text/plain; charset=utf-8"),
-                        (b"content-length", b"21"),
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode()),
                     ],
                 }
             )
-            await send_with_headers({"type": "http.response.body", "body": b"Internal Server Error"})
+            await send_with_headers({"type": "http.response.body", "body": body})

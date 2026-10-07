@@ -32,13 +32,15 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """True only for a matching password; never raises on bad input."""
-    encoded = password.encode("utf-8")
-    if len(encoded) > PASSWORD_MAX_BYTES:
+    """True only for a matching password; never raises, whatever the input."""
+    if not isinstance(password_hash, str) or not password_hash:
         return False
     try:
+        encoded = password.encode("utf-8")
+        if len(encoded) > PASSWORD_MAX_BYTES:
+            return False
         return bcrypt.checkpw(encoded, password_hash.encode("ascii"))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return False
 
 

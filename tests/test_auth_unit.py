@@ -90,3 +90,8 @@ def test_normalize_username_rejects_invalid_names(raw):
 def test_normalize_username_accepts_boundary_lengths():
     assert auth.normalize_username("abc") == "abc"
     assert auth.normalize_username("a" * 32) == "a" * 32
+
+
+@pytest.mark.parametrize("bad_hash", [None, "", 123, b"bytes", "ünïcode-hash"])
+def test_verify_never_raises_for_any_hash_value(bad_hash):
+    assert auth.verify_password("whatever-password", bad_hash) is False

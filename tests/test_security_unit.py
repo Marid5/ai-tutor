@@ -1,11 +1,13 @@
 """Client IP resolution, persistent rate limiting and security headers."""
 
+import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.testclient import TestClient
 
 from app.database import Database
@@ -23,9 +25,44 @@ def test_client_ip_trusted_loopback_peer_uses_rightmost_forwarded_entry():
     assert client_ip("127.0.0.1", "1.1.1.1, 2.2.2.2", trust_proxy=True) == "2.2.2.2"
 
 
-@pytest.mark.parametrize("peer", ["::1", "10.0.0.5", "172.18.0.3", "192.168.1.9"])
+@pytest.mark.parametrize(
+    "peer",
+    [
+        "127.0.0.1",
+        "127.9.9.9",
+        "::1",
+        "10.0.0.5",
+        "172.16.0.1",
+        "172.31.255.254",
+        "192.168.1.9",
+        "fd12:3456::1",
+        "fc00::1",
+        "::ffff:10.0.0.5",
+    ],
+)
 def test_client_ip_trusts_loopback_and_private_peers(peer):
     assert client_ip(peer, "203.0.113.7", trust_proxy=True) == "203.0.113.7"
+
+
+@pytest.mark.parametrize(
+    "peer",
+    [
+        "0.0.0.0",
+        "169.254.1.1",
+        "192.0.2.1",
+        "198.51.100.4",
+        "203.0.113.9",
+        "172.15.0.1",
+        "172.32.0.1",
+        "100.64.0.1",
+        "fe80::1",
+        "2001:db8::1",
+        "::",
+        "8.8.8.8",
+    ],
+)
+def test_client_ip_does_not_trust_other_peers(peer):
+    assert client_ip(peer, "9.9.9.9", trust_proxy=True) == peer
 
 
 def test_client_ip_public_peer_cannot_spoof_forwarded_header():
@@ -43,6 +80,22 @@ def test_client_ip_missing_header_falls_back_to_peer():
 
 def test_client_ip_ignores_a_non_ip_rightmost_entry():
     assert client_ip("127.0.0.1", "1.1.1.1, garbage", trust_proxy=True) == "127.0.0.1"
+
+
+def test_client_ip_uses_the_last_non_empty_entry():
+    assert client_ip("127.0.0.1", "1.1.1.1, ", trust_proxy=True) == "1.1.1.1"
+    assert client_ip("127.0.0.1", "1.1.1.1, ,", trust_proxy=True) == "1.1.1.1"
+    assert client_ip("127.0.0.1", " , ", trust_proxy=True) == "127.0.0.1"
+
+
+@pytest.mark.parametrize("entry", ["2.2.2.2:443", "[2001:db8::2]:443", "[2001:db8::2]", "2.2.2"])
+def test_client_ip_falls_back_to_peer_for_ports_and_brackets(entry):
+    assert client_ip("127.0.0.1", f"1.1.1.1, {entry}", trust_proxy=True) == "127.0.0.1"
+
+
+def test_client_ip_returns_the_canonical_form():
+    assert client_ip("::1", "2001:0DB8:0:0:0:0:0:2", trust_proxy=True) == "2001:db8::2"
+    assert client_ip("::1", "  2001:db8::0002 ", trust_proxy=True) == "2001:db8::2"
 
 
 def test_client_ip_missing_peer_is_unknown():
@@ -115,6 +168,20 @@ def test_the_window_is_per_call(limiter: RateLimiter, clock: Clock):
     assert limiter.allowed("b", 1, WINDOW) is True
 
 
+def test_hit_exactly_at_the_window_edge_still_counts(limiter: RateLimiter, clock: Clock):
+    limiter.hit("b")
+    clock.advance(minutes=15)
+    assert not limiter.allowed("b", 1, WINDOW)
+    clock.advance(seconds=1)
+    assert limiter.allowed("b", 1, WINDOW)
+
+
+def test_a_window_longer_than_retention_is_rejected(limiter: RateLimiter):
+    assert limiter.allowed("b", 1, timedelta(days=1))
+    with pytest.raises(ValueError, match="retention"):
+        limiter.allowed("b", 1, timedelta(days=1, seconds=1))
+
+
 def test_limits_survive_a_restart(tmp_path: Path, clock: Clock):
     path = tmp_path / "persist.db"
     first = Database(path)
@@ -166,6 +233,10 @@ def client() -> TestClient:
     def boom() -> PlainTextResponse:
         raise RuntimeError("boom")
 
+    @app.get("/stream")
+    def stream() -> StreamingResponse:
+        return StreamingResponse(iter([b"one,", b"two,", b"three"]), media_type="text/plain")
+
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -188,3 +259,57 @@ def test_middleware_keeps_headers_a_route_set_explicitly(client: TestClient):
     response = client.get("/custom")
     assert response.headers.get_list("Referrer-Policy") == ["no-referrer"]
     assert response.headers["X-Frame-Options"] == "DENY"
+
+
+def test_unhandled_error_is_a_json_500_with_headers_and_is_logged(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+):
+    with caplog.at_level(logging.ERROR, logger="app.security"):
+        response = client.get("/boom")
+    assert response.status_code == 500
+    assert response.headers["content-type"] == "application/json"
+    assert response.json() == {"detail": "internal server error"}
+    assert int(response.headers["content-length"]) == len(response.content)
+    assert any("/boom" in record.getMessage() and record.exc_info for record in caplog.records)
+    assert "boom" not in response.text
+
+
+def test_streaming_response_keeps_its_body_and_gets_the_headers(client: TestClient):
+    response = client.get("/stream")
+    assert response.text == "one,two,three"
+    for name, value in SECURITY_HEADERS.items():
+        assert response.headers[name] == value
+
+
+async def _drive(middleware, scope):
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    await middleware(scope, receive, send)
+    return sent
+
+
+def test_error_after_the_response_started_is_re_raised():
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        raise RuntimeError("late failure")
+
+    with pytest.raises(RuntimeError, match="late failure"):
+        asyncio.run(_drive(SecurityHeadersMiddleware(app), {"type": "http", "path": "/"}))
+
+
+def test_non_http_scopes_pass_through_untouched():
+    seen = []
+
+    async def app(scope, receive, send):
+        seen.append(scope["type"])
+        await send({"type": "lifespan.startup.complete"})
+
+    sent = asyncio.run(_drive(SecurityHeadersMiddleware(app), {"type": "lifespan"}))
+    assert seen == ["lifespan"]
+    assert sent == [{"type": "lifespan.startup.complete"}]
