@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.e2e.json",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "icons": "node scripts/render-icons.mjs"
   },
   "dependencies": {
     "react": "18.3.1",

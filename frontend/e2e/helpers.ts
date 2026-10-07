@@ -71,6 +71,9 @@ export class PageGuard {
   }
 }
 
+/** Option or answer text made safe to embed in a RegExp. */
+export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /** Under --single-process (some sandboxes), Chromium survives only one context per browser. */
 const SINGLE_PROCESS = (process.env.PW_CHROMIUM_ARGS ?? '').split(/\s+/).includes('--single-process');
 

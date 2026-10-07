@@ -57,19 +57,15 @@ test('a finished lesson replays as practice from its row', async ({ page }) => {
   await expect(done(page)).toHaveText('Practice complete');
 });
 
-test('review opens only when the server has cards due', async ({ page }) => {
+test('the Review entry point is shut on the day a lesson is learned', async ({ page }) => {
   test.setTimeout(90_000);
   const steps = new StepLog(page);
   const board = await learnFirstLesson(page, steps);
 
-  if (board.review_due === 0) {
-    // Nothing is due on the day a lesson is learned: the tile says so and stays shut.
-    await expect(page.getByRole('button', { name: 'Review Nothing due today' })).toBeDisabled();
-    return;
-  }
-  const review = page.getByRole('button', { name: new RegExp(`^Review ${board.review_due} cards? Due today$`) });
-  await review.click();
-  await expect(page.getByRole('button', { name: 'Leave review' })).toBeVisible();
-  await finishSession(page, steps);
-  await expect(done(page)).toHaveText('Review complete');
+  // Nothing is due on the day a lesson is learned: the tile says so and stays shut.
+  expect(board.review_due).toBe(0);
+  await expect(page.getByRole('button', { name: 'Review Nothing due today' })).toBeDisabled();
 });
+
+// Opening a due review needs a card scheduled for a later day, which a same-day run cannot reach.
+test.fixme('review opens and completes once cards are due', async () => {});

@@ -1,5 +1,5 @@
 import {
-  FIRST_LESSON, StepLog, answerStep, buildAnswer, done, expect, gapText, pickOption, rightOption, signUp, test,
+  FIRST_LESSON, StepLog, answerStep, buildAnswer, done, escapeRegExp, expect, gapText, pickOption, rightOption, signUp, test,
   verdict, waitForNextStep, wrongOption,
 } from './helpers';
 
@@ -29,7 +29,7 @@ test('a missed card climbs the ladder through cloze and assemble before it count
   await expect(miss).toBeVisible();
   // The verdict is the server's: the chosen option is marked wrong, the answer and note are shown.
   const chosen = page.getByRole('group', { name: 'Options' }).locator('[data-state="wrong"]');
-  await expect(chosen).toHaveAccessibleName(new RegExp(`^${wrong}\\s*, incorrect$`));
+  await expect(chosen).toHaveAccessibleName(new RegExp(`^${escapeRegExp(wrong)}\\s*, incorrect$`));
   await expect(miss).toContainText(first.answer);
   await expect(miss).toContainText('This card will come back for another try.');
   await expect(page.getByRole('status').filter({ hasText: 'Not quite.' })).toHaveText(`Not quite. ${first.answer}`);
@@ -52,7 +52,8 @@ test('a missed card climbs the ladder through cloze and assemble before it count
     } else if (step.kind === 'cloze') {
       await expect(page.locator('.step-head .eyebrow')).toHaveText('Fill in the gap');
       await expect(page.getByRole('img', { name: 'Gap' })).toBeVisible();
-      await expect(page.locator('.session')).toContainText(`${step.prefix ?? ''}`.trim());
+      const prefix = (step.prefix ?? '').trim();
+      if (prefix) await expect(page.locator('.session')).toContainText(prefix);
       await pickOption(page, step, gapText(step));
     } else if (step.kind === 'assemble') {
       await expect(page.locator('.step-head .eyebrow')).toHaveText('Build the answer');

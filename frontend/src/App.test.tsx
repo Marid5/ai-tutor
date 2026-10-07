@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import type { Chapters, Config, Progress, StudySession } from './api';
@@ -99,6 +99,7 @@ describe('App', () => {
     };
     let release = () => {};
     let board = 0;
+    let lateBoardSettled = false;
     const fetchMock = serve({
       '/api/config': () => [200, config],
       '/api/chapters': () => [200, chapters],
@@ -109,7 +110,12 @@ describe('App', () => {
     // The second request for the board (on the way back from Progress) answers late.
     const answer = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation(async (input: string) => {
-      if (input === '/api/chapters' && ++board === 2) await new Promise<void>(resolve => { release = resolve; });
+      if (input === '/api/chapters' && ++board === 2) {
+        await new Promise<void>(resolve => { release = resolve; });
+        const late = await answer(input);
+        lateBoardSettled = true;
+        return late;
+      }
       return answer(input);
     });
     render(<App />);
@@ -121,8 +127,11 @@ describe('App', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Start lesson/ }));
     await screen.findByRole('heading', { level: 1, name: 'What is a token?' });
 
-    release();
-    await new Promise(resolve => setTimeout(resolve, 0));
+    // Let the late board arrive and be applied, all inside act, then wait for the signal that it did.
+    await act(async () => { release(); });
+    await waitFor(() => expect(lateBoardSettled).toBe(true));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(board).toBe(2);
     expect(screen.getByRole('heading', { level: 1, name: 'What is a token?' })).toBeTruthy();
   });
 

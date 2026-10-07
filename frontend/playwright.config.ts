@@ -6,7 +6,9 @@ import { defineConfig, devices } from '@playwright/test';
  * step and decides what comes next, so a mock would test nothing that matters.
  *
  * PW_CHROMIUM_ARGS (optional, space-separated) passes extra Chromium flags,
- * for sandboxes where the default process model cannot start.
+ * for sandboxes where the default process model cannot start. With
+ * --single-process this is a degraded fallback for restricted sandboxes
+ * (traces and video are unavailable); CI runs without it.
  */
 const chromiumArgs = (process.env.PW_CHROMIUM_ARGS ?? '').split(/\s+/).filter(Boolean);
 // E2E_PORT moves the test server off 8765 when that port is taken.

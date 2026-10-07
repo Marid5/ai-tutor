@@ -97,10 +97,9 @@ test('a new learner finishes the first lesson, resumes after a reload and sees t
   expect(board.practice_available).toBe(true);
   const practice = page.getByRole('button', { name: `Practice ${board.practice_card_count} cards from finished lessons` });
   await expect(practice).toBeEnabled();
-  const review = board.review_due > 0
-    ? page.getByRole('button', { name: new RegExp(`^Review ${board.review_due} cards? Due today$`) })
-    : page.getByRole('button', { name: 'Review Nothing due today' });
-  await expect(review).toBeEnabled({ enabled: board.review_due > 0 });
+  // Nothing is due on the day a lesson is learned, so the Review tile is shut.
+  expect(board.review_due).toBe(0);
+  await expect(page.getByRole('button', { name: 'Review Nothing due today' })).toBeDisabled();
 
   // Practice opens a session; leaving it returns home with the board intact.
   await practice.click();

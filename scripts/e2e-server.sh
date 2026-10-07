@@ -5,8 +5,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+if [ ! -x .venv/bin/uvicorn ]; then
+  echo "e2e-server: .venv/bin/uvicorn not found; run 'make setup' first." >&2
+  exit 1
+fi
+
 # Always rebuild, so the tests never run against a stale bundle.
-make build >/dev/null
+make build
 
 DB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ai-tutor-e2e.XXXXXX")"
 SERVER=""
