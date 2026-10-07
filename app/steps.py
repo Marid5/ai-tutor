@@ -18,12 +18,15 @@ Invariants this module upholds:
 
 - The verdict on a closed step is recomputed here from the answer text. The
   client's own `correct` flag is never evidence.
-- Every step id carries the first 8 hex characters of the card's check hash
-  (`h8`). When the answer material of a card is edited the hash changes, so new
-  steps never collide with old ones and an answer to a step issued before the
-  edit no longer matches the card: it is refused as stale.
+- Each card row carries a `check_version`: a fingerprint of its answer
+  material plus an epoch that grows on every change of that material, so an
+  edit that is later reverted still yields a new version.
+- Every step id carries the first 8 hex characters of the check version
+  (`h8`). After an edit new steps never collide with old ones, and an answer
+  to a step issued before the edit no longer matches the card: it is refused
+  as stale.
 - Everything derived from history (the ladder, readiness, "already checked")
-  reads only events recorded under the card's current check hash, so an
+  reads only events recorded under the card's current check version, so an
   edited card starts over and old answers are never re-graded against new
   content.
 
@@ -82,17 +85,18 @@ def triage_enabled(row: Any) -> bool:
 
 
 def hash_prefix(row: Any) -> str:
-    return row["check_hash"][:HASH_PREFIX_LENGTH]
+    """`h8`: the start of the card's check version, carried in every step id."""
+    return row["check_version"][:HASH_PREFIX_LENGTH]
 
 
 def current_events(row: Any, events: Iterable[Any]) -> list[Any]:
-    """Events answered against the card as it is now (same check hash).
+    """Events answered against the card as it is now (same check version).
 
     Every derivation from history goes through this filter, so a card whose
     answer was edited is treated as never seen.
     """
-    check_hash = row["check_hash"]
-    return [event for event in events if event["check_hash"] == check_hash]
+    version = row["check_version"]
+    return [event for event in events if event["check_version"] == version]
 
 
 def step_is_available(row: Any, kind: str) -> bool:
@@ -225,6 +229,11 @@ def ladder_step(row: Any, kind: str, trigger_event_id: str, attempt: int) -> dic
     return _with_payload(row, step)
 
 
+def _is_count(text: str) -> bool:
+    """An attempt counter as the engine writes it: ASCII digits, no leading zero."""
+    return text.isascii() and text.isdecimal() and (text == "0" or not text.startswith("0"))
+
+
 def step_id_matches(step_id: str | None, kind: str, row: Any) -> bool:
     """Whether this id is one the engine could issue for this card right now.
 
@@ -245,7 +254,7 @@ def step_id_matches(step_id: str | None, kind: str, row: Any) -> bool:
             and parts[0] == kind
             and parts[1] == card_id
             and parts[2] == h8
-            and parts[3].isdigit()
+            and _is_count(parts[3])
             and step_is_available(row, kind)
         )
     if kind not in CLOSED_KINDS:
@@ -259,7 +268,7 @@ def step_id_matches(step_id: str | None, kind: str, row: Any) -> bool:
             and kind == rungs[0]
             and parts[2] == card_id
             and parts[3] == h8
-            and parts[4].isdigit()
+            and _is_count(parts[4])
         )
     if parts[0] + ":" == LADDER_PREFIX:
         # The trigger is an event id; it sits between the hash and the attempt.
@@ -270,7 +279,7 @@ def step_id_matches(step_id: str | None, kind: str, row: Any) -> bool:
             and parts[2] == card_id
             and parts[3] == h8
             and bool(":".join(parts[4:-1]))
-            and parts[-1].isdigit()
+            and _is_count(parts[-1])
         )
     return False
 
@@ -335,6 +344,16 @@ def attempts_of(row: Any, card_events: list[Any], kind: str) -> int:
     return sum(1 for event in current_events(row, card_events) if event["kind"] == kind)
 
 
+def primary_attempt(row: Any, card_events: list[Any]) -> int:
+    """Attempt number of the next primary check of this card in a session.
+
+    The engine serves a primary check only while the card has none under its
+    current version, so in practice this is 0; it is still derived from
+    events, so the id the server issues and the id it accepts always agree.
+    """
+    return sum(1 for event in current_events(row, card_events) if is_primary(event))
+
+
 def triage_attempted(row: Any, card_events: list[Any]) -> bool:
     return attempts_of(row, card_events, "triage") > 0
 
@@ -378,12 +397,15 @@ def card_state_of(row: Any) -> str:
     return row["cs_state"] if _has(row, "cs_state") and row["cs_state"] else "new"
 
 
-def card_category(row: Any) -> Literal["new", "learning", "review"]:
+def category_for(state: str, stability: float | None) -> Literal["new", "learning", "review"]:
     """New (never scheduled), learning, or review (a stable, mature interval)."""
-    state = card_state_of(row)
     if state == "new":
         return "new"
-    stability = row["cs_stability"] if _has(row, "cs_stability") else None
     if state == "review" and stability is not None and stability >= MATURE_STABILITY_DAYS:
         return "review"
     return "learning"
+
+
+def card_category(row: Any) -> Literal["new", "learning", "review"]:
+    """`category_for` a card row joined to the learner's schedule."""
+    return category_for(card_state_of(row), row["cs_stability"] if _has(row, "cs_stability") else None)

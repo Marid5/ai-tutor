@@ -7,6 +7,7 @@ half-written change behind. Times are UTC ISO-8601 strings from `utc_now()`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -35,6 +36,11 @@ _CARD_IDENTITY_COLUMNS = ("id", "program_version", "position")
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def check_version(check_hash: str, epoch: int) -> str:
+    """Identity of one version of a card's check: its hash plus how often the hash has changed."""
+    return hashlib.sha256(f"{check_hash}:{epoch}".encode()).hexdigest()
 
 
 def _dump(value: Any) -> str:
@@ -199,9 +205,10 @@ class Database:
 
         Keyed by the stable ids, so progress survives edits to wording, titles
         and order. When a card's `check_hash` changes (its answer material was
-        edited) every learner's schedule for that card is dropped; events stay,
-        and readiness is derived from events with the current hash, so the card
-        simply starts over. Lesson completion is not rewritten here. Content
+        edited) every learner's schedule for that card is dropped and the card
+        gets a new `check_version`; events stay, and readiness is derived from
+        events with the current version, so the card simply starts over (also
+        when an edit is reverted: the epoch only ever grows). Lesson completion is not rewritten here. Content
         missing from the program is retired, not deleted, and comes back with
         its history when the id returns.
 
@@ -282,6 +289,14 @@ class Database:
     def _write_card(
         conn: sqlite3.Connection, values: dict[str, Any], previous: sqlite3.Row | None, counts: dict[str, int]
     ) -> None:
+        epoch = 0
+        if previous is not None:
+            # Every change of the check, including a revert to an earlier text,
+            # opens a new epoch, so answers given to an older version never
+            # count again.
+            changed = previous["check_hash"] != values["check_hash"]
+            epoch = previous["check_epoch"] + (1 if changed else 0)
+        values = {**values, "check_epoch": epoch, "check_version": check_version(values["check_hash"], epoch)}
         columns = list(values)
         if previous is None:
             counts["added"] += 1
@@ -386,8 +401,8 @@ class Database:
     ) -> Literal["inserted", "duplicate_event", "duplicate_step"]:
         """Store one accepted answer; a replay of the same event or step is reported, not stored.
 
-        `event["check_hash"]` is required: it pins the answer to the version of the
-        card's check that the learner actually saw.
+        `event["check_version"]` is required: it pins the answer to the version of
+        the card's check that the learner actually saw.
         """
         values = {
             "timing_version": None,
@@ -395,16 +410,16 @@ class Database:
             "correct": None,
             "rating": None,
             **event,
-            "check_hash": event["check_hash"],
+            "check_version": event["check_version"],
             "user_id": user_id,
         }
         with self._transaction() as conn:
             cursor = conn.execute(
                 """INSERT OR IGNORE INTO events(
                     id,ts,session_id,card_id,kind,answer,rating,elapsed_ms,timing_version,step_id,correct,
-                    check_hash,user_id)
+                    check_version,user_id)
                 VALUES(:id,:ts,:session_id,:card_id,:kind,:answer,:rating,:elapsed_ms,:timing_version,:step_id,
-                    :correct,:check_hash,:user_id)""",
+                    :correct,:check_version,:user_id)""",
                 values,
             )
             if cursor.rowcount == 1:
@@ -608,7 +623,7 @@ class Database:
         return self.scalar(
             """SELECT s.lesson_id FROM user_lesson_state s JOIN lessons l ON s.lesson_id=l.id
             WHERE s.user_id=? AND s.status='in_progress' AND l.retired=0
-            ORDER BY s.started_at LIMIT 1""",
+            ORDER BY s.started_at, s.lesson_id LIMIT 1""",
             (user_id,),
         )
 

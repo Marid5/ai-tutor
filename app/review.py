@@ -20,7 +20,7 @@ from typing import Any
 
 from .content import Schedule
 from .database import Database
-from .daytime import day_end, day_key, to_utc_iso
+from .daytime import day_end, day_key, require_aware, to_utc_iso
 from .steps import (
     card_category,
     card_resolved,
@@ -35,7 +35,8 @@ REVIEW_QUEUE_SAFETY_LIMIT = 500
 REVIEW_CARDS_PER_SESSION = 10
 PRACTICE_CARDS_PER_SESSION = 10
 
-_CARD_COLUMNS = "c.*, s.state AS cs_state, s.due AS cs_due, s.stability AS cs_stability"
+# Card columns plus the learner's schedule, as the queue builders expect them.
+CARD_COLUMNS = "c.*, s.state AS cs_state, s.due AS cs_due, s.stability AS cs_stability"
 
 
 # ------------------------------------------------------------- scheduled review
@@ -57,7 +58,7 @@ def due_review_cards(
 ) -> list[Any]:
     """Every live card due before the current learning day ends, interleaved by category."""
     rows = db.fetch_cards(
-        f"""SELECT {_CARD_COLUMNS}
+        f"""SELECT {CARD_COLUMNS}
         FROM cards c
         JOIN lessons l ON l.id=c.lesson_id
         JOIN card_state s ON s.card_id=c.id AND s.user_id=?
@@ -166,6 +167,7 @@ def open_review_session(
     db: Database, user_id: str, now: datetime, schedule: Schedule
 ) -> dict[str, Any] | None:
     """Resume the open review sitting, or cut the next one from today's plan; None if nothing is due."""
+    require_aware(now)
     active = db.in_progress_study_session(user_id, "scheduled_review")
     if active:
         return active

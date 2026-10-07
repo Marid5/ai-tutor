@@ -85,6 +85,12 @@ CREATE TABLE cards (
   -- Identity of the check a learner passes (answer material only). A change
   -- means earlier answers belong to a different question, so schedules reset.
   check_hash TEXT NOT NULL,
+  -- How many times check_hash has changed since the card was first loaded.
+  -- An edit that is later reverted brings the hash back but not the epoch.
+  check_epoch INTEGER NOT NULL DEFAULT 0,
+  -- sha256 of "<check_hash>:<check_epoch>": identifies one version of the
+  -- check. Answers are pinned to it, and step ids carry its first 8 chars.
+  check_version TEXT NOT NULL,
   program_version TEXT NOT NULL,
   retired INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1))
 );
@@ -112,8 +118,9 @@ CREATE TABLE card_state (
 CREATE INDEX idx_card_state_due ON card_state(user_id, state, due);
 
 -- Every accepted answer. Readiness, the exercise ladder and "already checked"
--- are derived from events that carry the card's current check_hash, so a card
--- whose answer changed starts over without its history being deleted.
+-- are derived from events that carry the card's current check_version, so a
+-- card whose answer changed starts over without its history being deleted,
+-- and still starts over if the edit is later reverted.
 CREATE TABLE events (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -127,7 +134,7 @@ CREATE TABLE events (
   elapsed_ms INTEGER NOT NULL DEFAULT 0,
   timing_version INTEGER,
   step_id TEXT,
-  check_hash TEXT NOT NULL
+  check_version TEXT NOT NULL
 );
 -- Idempotency: a replayed answer must not be counted twice.
 CREATE UNIQUE INDEX events_user_session_step_unique

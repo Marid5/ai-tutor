@@ -30,6 +30,7 @@ the engine from one place.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,8 +39,9 @@ from typing import Any, Literal
 from . import fsrs
 from .content import Program
 from .database import Database
-from .daytime import to_utc_iso
+from .daytime import require_aware, to_utc_iso
 from .review import (
+    CARD_COLUMNS,
     PRACTICE_CARDS_PER_SESSION,
     REVIEW_CARDS_PER_SESSION,
     due_review_cards,
@@ -56,8 +58,8 @@ from .steps import (
     FLASH_ANSWERS,
     LADDER_PREFIX,
     LEARNING_KINDS,
-    MATURE_STABILITY_DAYS,
     PRIMARY_PREFIX,
+    STEP_ID_MAX,
     STEP_KINDS,
     TRIAGE_ANSWERS,
     attempts_of,
@@ -65,14 +67,17 @@ from .steps import (
     card_probed,
     card_resolved,
     card_state_of,
+    category_for,
     closed_step_correct,
     current_events,
     derive_card_stage,
     event_correct,
     flash_step,
     group_by_card,
+    hash_prefix,
     is_closed,
     ladder_step,
+    primary_attempt,
     primary_step,
     rungs_for,
     step_id_matches,
@@ -123,13 +128,17 @@ FLASH_MAX_ATTEMPTS = 2
 LESSON_TOTAL_STEPS_MAX = 40
 REVIEW_TOTAL_STEPS_MAX = 30
 
+# Client-chosen event ids (the idempotency key of an answer). They also end up
+# inside ladder step ids, so their length is bounded.
+EVENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# A real answer is a button label or the card's own answer; anything longer is not one.
+ANSWER_MAX_LENGTH = 500
+
 # Longest time a single answer may claim; longer means the tab was left open.
 ELAPSED_MS_MAX = 5 * 60 * 1000
 
 # study_sessions.mode values that are voluntary practice, not scheduled review.
 PRACTICE_MODES = {"lesson_practice", "mixed_practice"}
-
-_CARD_COLUMNS = "c.*, s.state AS cs_state, s.due AS cs_due, s.stability AS cs_stability"
 
 
 # --------------------------------------------------------------- learning tail
@@ -227,7 +236,7 @@ def _chapter_filler(
     if needed <= 0:
         return []
     rows = db.fetch_cards(
-        f"""SELECT {_CARD_COLUMNS}
+        f"""SELECT {CARD_COLUMNS}
         FROM cards c
         JOIN lessons l ON l.id=c.lesson_id
         LEFT JOIN card_state s ON s.card_id=c.id AND s.user_id=?
@@ -248,7 +257,7 @@ def _chapter_filler(
 # ----------------------------------------------------------------- lessons
 def _lesson_rows(db: Database, user_id: str, lesson_id: str) -> list[Any]:
     return db.fetch_cards(
-        f"""SELECT {_CARD_COLUMNS}
+        f"""SELECT {CARD_COLUMNS}
         FROM cards c LEFT JOIN card_state s ON s.card_id=c.id AND s.user_id=?
         WHERE c.lesson_id=? AND c.retired=0 ORDER BY c.position""",
         (user_id, lesson_id),
@@ -281,8 +290,7 @@ def lesson_steps(db: Database, user_id: str, lesson: dict[str, Any]) -> list[dic
     #    first lesson already shows progress.
     for row in rows:
         if not card_probed(row, card_events[row["id"]]):
-            kind = rungs_for(row)[0]
-            queue.append(primary_step(row, attempts_of(row, card_events[row["id"]], kind)))
+            queue.append(primary_step(row, primary_attempt(row, card_events[row["id"]])))
 
     # 3. Learning tail: a card the learner did not know is read again.
     for row in rows:
@@ -313,7 +321,7 @@ def accuracy_for_lesson(db: Database, user_id: str, lesson_id: str) -> float:
     first: dict[tuple[str, str], Any] = {}
     for event in events:
         row = rows.get(event["card_id"])
-        if row is None or event["kind"] not in STEP_KINDS or event["check_hash"] != row["check_hash"]:
+        if row is None or event["kind"] not in STEP_KINDS or event["check_version"] != row["check_version"]:
             continue
         first.setdefault((event["kind"], event["card_id"]), event)
     if not first:
@@ -355,7 +363,7 @@ def session_queue(
     for row in rows:
         card_events = current_events(row, grouped.get(row["id"], []))
         if not card_probed(row, card_events):
-            queue.append(primary_step(row, attempts_of(row, card_events, rungs_for(row)[0])))
+            queue.append(primary_step(row, primary_attempt(row, card_events)))
     for row in rows:
         card_events = current_events(row, grouped.get(row["id"], []))
         if _needs_learning_step(row, card_events):
@@ -364,15 +372,26 @@ def session_queue(
     return queue[:total_max]
 
 
-def study_session_steps(db: Database, user_id: str, study_session: dict[str, Any]) -> list[dict[str, Any]]:
+def _sitting_rows(db: Database, user_id: str, study_session: dict[str, Any]) -> list[Any]:
+    """The sitting's cards that still belong in it, in the order it was cut.
+
+    A card retired since then is gone, and one reset by an edit of its answer
+    (no schedule any more) goes back to its lesson as new, so both are dropped,
+    as they are from today's review plan.
+    """
     card_ids = json.loads(study_session["card_ids_json"])
     rows_by_id = db.cards_for_user(user_id, card_ids)
-    rows = [
+    return [
         rows_by_id[card_id]
         for card_id in card_ids
-        if card_id in rows_by_id and not rows_by_id[card_id]["retired"]
+        if card_id in rows_by_id
+        and not rows_by_id[card_id]["retired"]
+        and card_state_of(rows_by_id[card_id]) != "new"
     ]
-    return session_queue(db, user_id, study_session["id"], rows)
+
+
+def study_session_steps(db: Database, user_id: str, study_session: dict[str, Any]) -> list[dict[str, Any]]:
+    return session_queue(db, user_id, study_session["id"], _sitting_rows(db, user_id, study_session))
 
 
 def session_progress(db: Database, user_id: str, study_session: dict[str, Any]) -> tuple[int, int]:
@@ -381,15 +400,10 @@ def session_progress(db: Database, user_id: str, study_session: dict[str, Any]) 
     Derived from the queue length instead, the finish line would recede as the
     learner advances, because the ladder adds steps.
     """
-    card_ids = json.loads(study_session["card_ids_json"])
-    rows = db.cards_for_user(user_id, card_ids)
+    rows = _sitting_rows(db, user_id, study_session)
     grouped = group_by_card(db.events_for_session(user_id, study_session["id"]))
-    resolved = sum(
-        1
-        for card_id in card_ids
-        if card_id in rows and card_resolved(rows[card_id], grouped.get(card_id, []))
-    )
-    return len(card_ids), resolved
+    resolved = sum(1 for row in rows if card_resolved(row, grouped.get(row["id"], [])))
+    return len(rows), resolved
 
 
 # ------------------------------------------------------------------- answers
@@ -455,15 +469,6 @@ def _fsrs_applies(mode: str, kind: str, step_id: str, correct: bool | None, row:
     return correct is False
 
 
-def _category_of(state: fsrs.StoredCard) -> str:
-    """`card_category` for a just-computed schedule rather than a database row."""
-    if state.state == "new":
-        return "new"
-    if state.state == "review" and state.stability is not None and state.stability >= MATURE_STABILITY_DAYS:
-        return "review"
-    return "learning"
-
-
 def _event_time(event: dict[str, Any], now: datetime) -> str | None:
     """The event's own timestamp (an offline answer keeps its time), or now."""
     raw = event.get("ts")
@@ -485,6 +490,10 @@ def record_answer(
     timezone and day boundary come from `program.schedule`. The client's
     `correct` field is ignored: closed steps are graded here.
     """
+    require_aware(now)
+    event_id = event.get("id")
+    if event_id is not None and (not isinstance(event_id, str) or not EVENT_ID_RE.fullmatch(event_id)):
+        return _invalid("id must be 1-64 letters, digits, '-' or '_'")
     kind = event.get("kind")
     if kind not in STEP_KINDS:
         return _invalid(f"unknown step kind: {kind}")
@@ -501,11 +510,14 @@ def record_answer(
     if not isinstance(card_id, str) or not card_id:
         return _invalid("card_id is required")
     step_id = event.get("step_id")
-    if not isinstance(step_id, str) or not step_id:
-        return _invalid("step_id is required")
+    if not isinstance(step_id, str) or not step_id or len(step_id) > STEP_ID_MAX:
+        return _invalid(f"step_id is required and at most {STEP_ID_MAX} characters")
     answer = event.get("answer", "")
-    if not isinstance(answer, str):
-        return _invalid("answer must be a string")
+    if not isinstance(answer, str) or len(answer) > ANSWER_MAX_LENGTH:
+        return _invalid(f"answer must be a string of at most {ANSWER_MAX_LENGTH} characters")
+    timing_version = event.get("timing_version")
+    if timing_version is not None and (type(timing_version) is not int):
+        return _invalid("timing_version must be an integer")
     ts = _event_time(event, now)
     if ts is None:
         return _invalid("ts must be an ISO-8601 timestamp with a time zone")
@@ -524,9 +536,24 @@ def record_answer(
         return _invalid(f"flash answer must be one of {sorted(FLASH_ANSWERS)}")
 
     correct = closed_step_correct(row, kind, answer) if kind in CLOSED_KINDS else None
+    if step_id.startswith(PRIMARY_PREFIX):
+        # A primary check is accepted only while the server would serve one
+        # (the card has none in this session yet) and under the exact id it
+        # would issue: a client cannot mint a second primary check of a card.
+        session_events = db.events_for_session(user_id, session_id)
+        card_events = [past for past in session_events if past["card_id"] == card_id]
+        issued = f"{PRIMARY_PREFIX}{kind}:{card_id}:{hash_prefix(row)}:{primary_attempt(row, card_events)}"
+        if card_probed(row, card_events) or step_id != issued:
+            # A replay of an answer already accepted is still reported as a
+            # duplicate, so a client retrying its buffer sees the same result.
+            if event_id is not None and db.scalar("SELECT 1 FROM events WHERE id=?", (event_id,)):
+                return AnswerOutcome("duplicate_event", correct, None)
+            if any(past["step_id"] == step_id for past in card_events):
+                return AnswerOutcome("duplicate_step", correct, None)
+            return STALE
     rating = fsrs.rating_for(kind, correct, answer)
     stored = {
-        "id": event.get("id") or str(uuid.uuid4()),
+        "id": event_id or str(uuid.uuid4()),
         "ts": ts,
         "session_id": session_id,
         "card_id": card_id,
@@ -535,10 +562,10 @@ def record_answer(
         "rating": rating.name.lower(),
         "correct": correct,
         "elapsed_ms": elapsed,
-        "timing_version": event.get("timing_version"),
+        "timing_version": timing_version,
         "step_id": step_id,
         # Pins the answer to the version of the check the learner actually saw.
-        "check_hash": row["check_hash"],
+        "check_version": row["check_version"],
     }
     result = db.record_event(user_id, stored)
     if result != "inserted":
@@ -549,7 +576,7 @@ def record_answer(
         db.update_state(user_id, card_id, state, row["check_hash"])
         if mode in PRACTICE_MODES and correct is False:
             fold_practice_miss_into_today_plan(
-                db, user_id, now, program.schedule, card_id, _category_of(state)
+                db, user_id, now, program.schedule, card_id, category_for(state.state, state.stability)
             )
     finish_session_if_done(db, user_id, session_id)
     return AnswerOutcome("inserted", correct, None)

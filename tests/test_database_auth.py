@@ -169,7 +169,7 @@ def test_delete_user_cascades(seeded_db: Database):
                 "kind": "choice",
                 "answer": "Paris",
                 "elapsed_ms": 10,
-                "check_hash": "h",
+                "check_version": "h",
             },
         )
 

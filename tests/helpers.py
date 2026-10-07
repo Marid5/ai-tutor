@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from app import curriculum, session
 from app.content import Program, load_program
 from app.database import Database
 from app.session import AnswerOutcome, record_answer
@@ -27,6 +28,7 @@ class Row(dict):
 
 
 FAKE_HASH = "0123456789abcdef" * 4
+FAKE_VERSION = "fedcba9876543210" * 4
 FAKE_CARD_ID = "moon-landing"
 
 CARD_DEFAULTS: dict[str, Any] = {
@@ -52,6 +54,8 @@ CARD_DEFAULTS: dict[str, Any] = {
     "rungs_json": '["choice"]',
     "triage_enabled": 1,
     "check_hash": FAKE_HASH,
+    "check_epoch": 0,
+    "check_version": FAKE_VERSION,
     "program_version": "test",
     "cs_state": "new",
     "cs_stability": None,
@@ -71,7 +75,7 @@ EVENT_DEFAULTS: dict[str, Any] = {
     "elapsed_ms": 0,
     "timing_version": 2,
     "step_id": None,
-    "check_hash": FAKE_HASH,
+    "check_version": FAKE_VERSION,
     "accepted_order": 1,
 }
 
@@ -111,6 +115,19 @@ DEFAULT_CARDS: dict[str, dict[str, Any]] = {
         "option": "one hundred degrees",
         "distractors": ["fifty two degrees", "two hundred degrees", "ninety nine degrees"],
     },
+    # Only in courses whose `lessons` layout names them.
+    "tallest-mountain": {
+        "prompt": "Which mountain is the tallest above sea level?",
+        "answer": "Everest is the tallest mountain on Earth",
+        "option": "Everest",
+        "distractors": ["Denali", "Kilimanjaro", "Elbrus"],
+    },
+    "longest-river": {
+        "prompt": "Which river is usually named the longest?",
+        "answer": "The Nile is the longest river",
+        "option": "Nile",
+        "distractors": ["Amazon", "Danube", "Yangtze"],
+    },
 }
 # Lesson layout of the course written by `write_program`.
 LESSONS: dict[str, list[str]] = {
@@ -125,13 +142,15 @@ def write_program(
     exercises: dict[str, bool] | None = None,
     chapter_overrides: dict[str, bool] | None = None,
     cards: dict[str, dict[str, Any]] | None = None,
+    lessons: dict[str, list[str]] | None = None,
 ) -> Path:
     """Write (or rewrite) a one-chapter course under `tmp_path/content` and return its path.
 
     `exercises` sets the program defaults, `chapter_overrides` the chapter's own
     `exercises` block, and `cards` maps a card id to field changes (a value of
     None removes the field). Rewriting the same `tmp_path` is how a test edits
-    the course between two loads.
+    the course between two loads. `lessons` replaces the default layout
+    (lesson id -> card ids from `DEFAULT_CARDS`).
     """
     content = tmp_path / "content"
     (content / "chapters").mkdir(parents=True, exist_ok=True)
@@ -146,7 +165,7 @@ def write_program(
     chapter: dict[str, Any] = {"id": "basics", "title": "Basics", "lessons": []}
     if chapter_overrides is not None:
         chapter["exercises"] = chapter_overrides
-    for lesson_id, card_ids in LESSONS.items():
+    for lesson_id, card_ids in (lessons or LESSONS).items():
         lesson_cards = []
         for card_id in card_ids:
             fields = {"id": card_id, **deepcopy(DEFAULT_CARDS[card_id])}
@@ -226,3 +245,64 @@ def submit(
         "timing_version": 2,
     }
     return record_answer(db, user_id, event, program=program, now=now or fake_now())
+
+
+# ------------------------------------------------------------ a whole learner
+class Learner:
+    """One learner on a course written to disk, with helpers to walk a lesson."""
+
+    def __init__(self, db: Database, tmp_path: Path, **course):
+        self.db = db
+        self.tmp_path = tmp_path
+        self.program = seed(db, write_program(tmp_path, **course))
+        self.user = make_user(db)
+
+    def reload(self, **course) -> Program:
+        """Edit the course on disk and load it again, as a restart would."""
+        self.program = seed(self.db, write_program(self.tmp_path, **course))
+        return self.program
+
+    def row(self, card_id: str):
+        return self.db.card_for_user(self.user, card_id)
+
+    def lesson(self, lesson_id: str = "first"):
+        return self.db.lesson(lesson_id)
+
+    def start(self, lesson_id: str = "first") -> list[dict]:
+        self.db.start_lesson(self.user, lesson_id)
+        return self.steps(lesson_id)
+
+    def steps(self, lesson_id: str = "first") -> list[dict]:
+        return session.lesson_steps(self.db, self.user, self.lesson(lesson_id))
+
+    def answer(self, step: dict, *, right: bool = True, session_id: str = "first", **kwargs):
+        row = self.row(step["card_id"])
+        text = right_answer(row, step) if right else wrong_answer(row, step)
+        return submit(self.db, self.user, self.program, session_id, step, text, **kwargs)
+
+    def drain(self, lesson_id: str = "first", miss: set[str] | None = None, limit: int = 60) -> list[dict]:
+        """Answer every step (right, except primaries of cards in `miss`) until the lesson ends."""
+        served: list[dict] = []
+        for _ in range(limit):
+            queue = self.steps(lesson_id)
+            if not queue:
+                return served
+            step = queue[0]
+            served.append(step)
+            wrong = step["id"].startswith("p1:") and step["card_id"] in (miss or set())
+            outcome = self.answer(step, right=not wrong, session_id=lesson_id)
+            assert outcome.status == "inserted", outcome
+        raise AssertionError("lesson did not terminate")
+
+    def view(self) -> dict:
+        return curriculum.chapters_view(self.db, self.user, self.program, fake_now())
+
+
+def lesson_ref(view: dict, lesson_id: str) -> dict:
+    return next(
+        lesson for chapter in view["chapters"] for lesson in chapter["lessons"] if lesson["id"] == lesson_id
+    )
+
+
+def first_of(queue: list[dict], card_id: str, prefix: str) -> dict:
+    return next(step for step in queue if step["card_id"] == card_id and step["id"].startswith(prefix))

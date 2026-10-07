@@ -14,7 +14,7 @@ from typing import Any
 
 from .content import Program, Schedule
 from .database import PRACTICE_SESSION_ID_PREFIX, Database
-from .daytime import day_key, day_start
+from .daytime import day_key, day_start, require_aware
 from .review import (
     PRACTICE_CARDS_PER_SESSION,
     REVIEW_CARDS_PER_SESSION,
@@ -75,6 +75,7 @@ def _open_work(cards: list[Any], lesson_events: list[Any]) -> bool:
 
 def chapters_view(db: Database, user_id: str, program: Program, now: datetime) -> dict[str, Any]:
     """The home screen: every chapter and lesson (all open), the next lesson, review and practice."""
+    require_aware(now)
     schedule = program.schedule
     lesson_states = db.user_lesson_states(user_id)
     in_progress = db.in_progress_lesson(user_id)
@@ -157,6 +158,30 @@ def _next_lesson(chapters_out: list[dict[str, Any]], in_progress: str | None) ->
 
 
 # -------------------------------------------------------------- progress view
+FORECAST_DAYS = 7
+
+
+def _forecast(db: Database, user_id: str, now: datetime, schedule: Schedule) -> list[dict[str, Any]]:
+    """Cards falling due per learning day, for the next days that have any.
+
+    Days are learning days in the program's timezone (a review due at 02:00
+    belongs to the previous day when the day starts at 04:00), and anything
+    already overdue is counted as due today.
+    """
+    rows = db.fetch_cards(
+        """SELECT s.due FROM card_state s JOIN cards c ON c.id=s.card_id
+        JOIN lessons l ON l.id=c.lesson_id
+        WHERE s.user_id=? AND s.state != 'new' AND c.retired=0 AND l.retired=0""",
+        (user_id,),
+    )
+    today = day_key(now, schedule)
+    amounts: dict[str, int] = {}
+    for row in rows:
+        day = max(day_key(datetime.fromisoformat(row["due"]), schedule), today)
+        amounts[day] = amounts.get(day, 0) + 1
+    return [{"day": day, "amount": amounts[day]} for day in sorted(amounts)[:FORECAST_DAYS]]
+
+
 def learning_metrics(db: Database, user_id: str, now: datetime, schedule: Schedule) -> dict[str, Any]:
     """The progress screen.
 
@@ -184,16 +209,10 @@ def learning_metrics(db: Database, user_id: str, now: datetime, schedule: Schedu
     correct = sum(1 for row in graded if event_correct(row, cards[row["card_id"]]))
     retention = round(correct * 100 / len(graded)) if graded else 0
 
-    forecast = db.fetch_cards(
-        """SELECT substr(s.due,1,10) AS day, count(*) AS amount FROM card_state s
-        JOIN cards c ON c.id=s.card_id
-        WHERE s.user_id=? AND s.state != 'new' AND c.retired=0
-        GROUP BY substr(s.due,1,10) ORDER BY day LIMIT 7""",
-        (user_id,),
-    )
+    forecast = _forecast(db, user_id, now, schedule)
     difficult = db.fetch_cards(
         """SELECT c.id, c.prompt, c.answer, count(*) AS again_count FROM cards c
-        JOIN events e ON c.id=e.card_id AND e.check_hash=c.check_hash
+        JOIN events e ON c.id=e.card_id AND e.check_version=c.check_version
         WHERE e.user_id=? AND e.rating='again' AND c.retired=0 GROUP BY c.id
         ORDER BY again_count DESC, c.position LIMIT 5""",
         (user_id,),
@@ -207,7 +226,7 @@ def learning_metrics(db: Database, user_id: str, now: datetime, schedule: Schedu
         "cards_total": board["total"],
         "retention_30d": retention,
         "checks_30d": len(graded),
-        "forecast_7d": [dict(row) for row in forecast],
+        "forecast_7d": forecast,
         "problem_cards": [dict(row) for row in difficult],
         "session_minutes": minutes,
         "lessons_total": db.scalar("SELECT count(*) FROM lessons WHERE retired=0") or 0,

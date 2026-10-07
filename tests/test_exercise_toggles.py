@@ -2,77 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from app import curriculum, session
-from app.content import Program
 from app.database import Database
-from tests.helpers import fake_now, make_user, right_answer, seed, submit, write_program, wrong_answer
+from tests.helpers import Learner, fake_now, first_of, lesson_ref, submit, wrong_answer
 
 CARD = "capital-of-france"
 OTHER = "largest-planet"
-
-
-class Learner:
-    """One learner on a course written to disk, with helpers to walk a lesson."""
-
-    def __init__(self, db: Database, tmp_path: Path, **course):
-        self.db = db
-        self.tmp_path = tmp_path
-        self.program = seed(db, write_program(tmp_path, **course))
-        self.user = make_user(db)
-
-    def reload(self, **course) -> Program:
-        """Edit the course on disk and load it again, as a restart would."""
-        self.program = seed(self.db, write_program(self.tmp_path, **course))
-        return self.program
-
-    def row(self, card_id: str):
-        return self.db.card_for_user(self.user, card_id)
-
-    def lesson(self, lesson_id: str = "first"):
-        return self.db.lesson(lesson_id)
-
-    def start(self, lesson_id: str = "first") -> list[dict]:
-        self.db.start_lesson(self.user, lesson_id)
-        return self.steps(lesson_id)
-
-    def steps(self, lesson_id: str = "first") -> list[dict]:
-        return session.lesson_steps(self.db, self.user, self.lesson(lesson_id))
-
-    def answer(self, step: dict, *, right: bool = True, session_id: str = "first", **kwargs):
-        row = self.row(step["card_id"])
-        text = right_answer(row, step) if right else wrong_answer(row, step)
-        return submit(self.db, self.user, self.program, session_id, step, text, **kwargs)
-
-    def drain(self, lesson_id: str = "first", miss: set[str] | None = None, limit: int = 60) -> list[dict]:
-        """Answer every step (right, except primaries of cards in `miss`) until the lesson ends."""
-        served: list[dict] = []
-        for _ in range(limit):
-            queue = self.steps(lesson_id)
-            if not queue:
-                return served
-            step = queue[0]
-            served.append(step)
-            wrong = step["id"].startswith("p1:") and step["card_id"] in (miss or set())
-            outcome = self.answer(step, right=not wrong, session_id=lesson_id)
-            assert outcome.status == "inserted", outcome
-        raise AssertionError("lesson did not terminate")
-
-    def view(self) -> dict:
-        return curriculum.chapters_view(self.db, self.user, self.program, fake_now())
-
-
-def lesson_ref(view: dict, lesson_id: str) -> dict:
-    return next(
-        lesson for chapter in view["chapters"] for lesson in chapter["lessons"] if lesson["id"] == lesson_id
-    )
-
-
-def first_of(queue: list[dict], card_id: str, prefix: str) -> dict:
-    return next(step for step in queue if step["card_id"] == card_id and step["id"].startswith(prefix))
 
 
 # ----------------------------------------------------------- which primary
@@ -358,3 +295,104 @@ def test_replayed_step_is_a_duplicate_and_counts_once(db, tmp_path):
     assert learner.answer(triage, event_id="a").status == "duplicate_event"
     assert learner.answer(triage, event_id="b").status == "duplicate_step"
     assert db.scalar("SELECT count(*) FROM events") == 1
+
+
+def test_reverted_answer_edit_starts_over(db, tmp_path):
+    learner = Learner(db, tmp_path)
+    learner.start()
+    learner.drain()
+    learner.reload(cards={CARD: {"answer": "Paris is the capital city of France"}})
+    learner.reload()  # the edit is undone: the same answer text as at first
+    queue = learner.steps()
+    assert [step["kind"] for step in queue if step["card_id"] == CARD] == ["triage", "choice"]
+    row = learner.row(CARD)
+    events = [event for event in db.events_for_session(learner.user, "first") if event["card_id"] == CARD]
+    assert session.card_is_ready(row, events) is False, "answers to the first version do not count again"
+    view = learner.view()
+    assert lesson_ref(view, "first")["has_open_work"] is True
+    assert view["cards_ready"] == 1
+    learner.drain()
+    events = [event for event in db.events_for_session(learner.user, "first") if event["card_id"] == CARD]
+    assert session.card_is_ready(learner.row(CARD), events) is True
+    assert learner.steps() == []
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    ["x" * 300, {"nested": "id"}, "", "has space", "colon:inside", 7],
+    ids=["300-chars", "dict", "empty", "space", "colon", "int"],
+)
+def test_bad_event_id_is_invalid_and_the_lesson_keeps_working(db, tmp_path, bad_id):
+    learner = Learner(db, tmp_path, exercises={"triage": False})
+    primary = learner.start()[0]
+    row = learner.row(primary["card_id"])
+    event = {
+        "id": bad_id,
+        "session_id": "first",
+        "card_id": primary["card_id"],
+        "kind": primary["kind"],
+        "step_id": primary["id"],
+        "answer": wrong_answer(row, primary),
+        "elapsed_ms": 1,
+    }
+    outcome = session.record_answer(db, learner.user, event, program=learner.program, now=fake_now())
+    assert outcome.status == "invalid" and "id" in outcome.detail
+    assert db.scalar("SELECT count(*) FROM events") == 0
+    learner.drain(miss={primary["card_id"]})
+    assert db.user_lesson_state(learner.user, "first")["status"] == "completed"
+
+
+def test_client_fields_are_type_and_size_checked(db, tmp_path):
+    learner = Learner(db, tmp_path, exercises={"triage": False})
+    primary = learner.start()[0]
+    base = {
+        "session_id": "first",
+        "card_id": primary["card_id"],
+        "kind": primary["kind"],
+        "step_id": primary["id"],
+        "answer": "Paris",
+        "elapsed_ms": 1,
+    }
+    for broken in (
+        {"answer": "x" * 501},
+        {"answer": ["Paris"]},
+        {"ts": "yesterday"},
+        {"ts": "2026-10-07T10:00:00"},
+        {"elapsed_ms": True},
+        {"timing_version": "2"},
+    ):
+        outcome = session.record_answer(
+            db, learner.user, {**base, **broken}, program=learner.program, now=fake_now()
+        )
+        assert outcome.status == "invalid", broken
+    assert db.scalar("SELECT count(*) FROM events") == 0
+
+
+def test_naive_now_is_refused_before_any_write(db, tmp_path):
+    learner = Learner(db, tmp_path)
+    triage = first_of(learner.start(), CARD, "triage:")
+    naive = fake_now().replace(tzinfo=None)
+    with pytest.raises(ValueError):
+        submit(db, learner.user, learner.program, "first", triage, "know", now=naive)
+    with pytest.raises(ValueError):
+        curriculum.chapters_view(db, learner.user, learner.program, naive)
+    with pytest.raises(ValueError):
+        session.open_review_session(db, learner.user, naive, learner.program.schedule)
+    assert db.scalar("SELECT count(*) FROM events") == 0
+    assert db.scalar("SELECT count(*) FROM user_meta") == 0
+
+
+def test_primary_with_an_unissued_attempt_is_stale(db, tmp_path):
+    learner = Learner(db, tmp_path, exercises={"triage": False})
+    primary = first_of(learner.start(), CARD, "p1:")
+    assert primary["id"].endswith(":0")
+    minted = {**primary, "id": primary["id"][:-1] + "1"}
+    assert learner.answer(minted).status == "stale"
+    for forged in ("00", "\u0660", "+0"):  # other spellings of zero are not the issued id
+        assert learner.answer({**primary, "id": primary["id"][:-1] + forged}).status == "stale"
+    assert learner.answer(primary, event_id="first-answer").status == "inserted"
+    # Replays of the accepted answer stay duplicates, not stale.
+    assert learner.answer(primary, event_id="first-answer").status == "duplicate_event"
+    assert learner.answer(primary, event_id="second-try").status == "duplicate_step"
+    # Once checked, no further primary check of the card is accepted in this lesson.
+    assert learner.answer(minted).status == "stale"

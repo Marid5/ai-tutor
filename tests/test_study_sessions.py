@@ -124,3 +124,29 @@ def test_show_hint_by_default_round_trip(db):
     assert curriculum.show_hint_by_default(db, user) is True
     curriculum.set_show_hint_by_default(db, user, False)
     assert curriculum.show_hint_by_default(db, user) is False
+
+
+def test_forecast_groups_by_learning_day_in_the_course_timezone(db, tmp_path):
+    from app.content import Schedule
+
+    program = seed(db, write_program(tmp_path))
+    user = make_user(db)
+    finish_lesson(db, user, program, "first")
+    tokyo = Schedule(timezone="Asia/Tokyo", day_starts_at_hour=4)
+    with db._transaction() as conn:
+        # 05:00 next morning in Tokyo, though still 7 October in UTC.
+        conn.execute(
+            "UPDATE card_state SET due='2026-10-07T20:00:00+00:00' WHERE card_id='capital-of-france'"
+        )
+        # 03:30 in Tokyo on 9 October: before the 04:00 rollover, so it belongs to 8 October.
+        conn.execute("UPDATE card_state SET due='2026-10-08T18:30:00+00:00' WHERE card_id='largest-planet'")
+    now = fake_now()  # 19:00 in Tokyo on 7 October
+    forecast = curriculum.learning_metrics(db, user, now, tokyo)["forecast_7d"]
+    assert forecast == [{"day": "2026-10-08", "amount": 2}]
+
+    with db._transaction() as conn:
+        conn.execute("UPDATE card_state SET due='2026-09-01T00:00:00+00:00' WHERE card_id='largest-planet'")
+    forecast = curriculum.learning_metrics(db, user, now, tokyo)["forecast_7d"]
+    assert forecast == [{"day": "2026-10-07", "amount": 1}, {"day": "2026-10-08", "amount": 1}], (
+        "overdue is today"
+    )

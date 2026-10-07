@@ -60,7 +60,7 @@ def answered(db: Database, user_id: str, card_id: str, event_id: str) -> None:
             "elapsed_ms": 900,
             "step_id": event_id,
             "correct": 1,
-            "check_hash": db.card(card_id)["check_hash"],
+            "check_version": db.card(card_id)["check_version"],
         },
     )
 
@@ -158,6 +158,7 @@ def test_answer_edit_resets_schedule_for_all_users_keeps_events(
     first = seeded_db.create_user("first", "hash")
     second = seeded_db.create_user("second", "hash")
     old_hash = seeded_db.card(CARD)["check_hash"]
+    old_version = seeded_db.card(CARD)["check_version"]
     for user in (first, second):
         scheduled(seeded_db, user, CARD)
         scheduled(seeded_db, user, OTHER_CARD)
@@ -172,10 +173,11 @@ def test_answer_edit_resets_schedule_for_all_users_keeps_events(
     assert state_rows(seeded_db, CARD) == 0
     assert state_rows(seeded_db, OTHER_CARD) == 2
     assert seeded_db.card(CARD)["check_hash"] != old_hash
-    # History stays, still tagged with the hash it was answered against.
-    stored = seeded_db.fetch_cards("SELECT check_hash FROM events WHERE card_id=?", (CARD,))
+    assert seeded_db.card(CARD)["check_version"] != old_version
+    # History stays, still tagged with the version it was answered against.
+    stored = seeded_db.fetch_cards("SELECT check_version FROM events WHERE card_id=?", (CARD,))
     assert len(stored) == 2
-    assert {row["check_hash"] for row in stored} == {old_hash}
+    assert {row["check_version"] for row in stored} == {old_version}
     # Completion is left alone; "open work" is derived later from the events.
     assert seeded_db.user_lesson_state(first, "first")["status"] == "completed"
 
@@ -340,12 +342,12 @@ def test_program_version_stored(db: Database, program_minimal: Program):
     assert db.program_version() != program_minimal.program_version
 
 
-def test_events_store_check_hash(seeded_db: Database):
+def test_events_store_check_version(seeded_db: Database):
     user = seeded_db.create_user("learner", "hash")
     answered(seeded_db, user, CARD, "e1")
 
     row = seeded_db.events_for_user(user)[0]
-    assert row["check_hash"] == seeded_db.card(CARD)["check_hash"]
+    assert row["check_version"] == seeded_db.card(CARD)["check_version"]
 
     with pytest.raises(KeyError):
         seeded_db.record_event(
@@ -375,3 +377,20 @@ def test_upsert_is_one_transaction(seeded_db: Database, program_minimal: Program
 
     assert state_rows(seeded_db, CARD) == 1
     assert seeded_db.card(CARD)["answer"] == "The capital city of France is Paris."
+
+
+def test_reverted_answer_edit_gets_a_new_check_version(seeded_db: Database, program_minimal: Program):
+    first = seeded_db.card(CARD)
+    assert first["check_epoch"] == 0
+    edited = clone(program_minimal)
+    card_of(edited, CARD).answer = "The capital city of France is Paris, on the Seine."
+    seeded_db.upsert_program(edited)
+    seeded_db.upsert_program(program_minimal)
+    reverted = seeded_db.card(CARD)
+    assert reverted["check_hash"] == first["check_hash"]
+    assert reverted["check_epoch"] == 2
+    assert reverted["check_version"] != first["check_version"]
+    # Loading the same program again, or retiring and restoring the card, keeps the version.
+    seeded_db.upsert_program(drop_card(program_minimal, CARD))
+    seeded_db.upsert_program(program_minimal)
+    assert seeded_db.card(CARD)["check_version"] == reverted["check_version"]

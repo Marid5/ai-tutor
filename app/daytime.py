@@ -14,14 +14,21 @@ from zoneinfo import ZoneInfo
 from app.content import Schedule
 
 
+def require_aware(now: datetime) -> datetime:
+    """Reject a naive datetime: read as local or as UTC it would misplace the day boundary."""
+    if now.utcoffset() is None:
+        raise ValueError("now must be a timezone-aware datetime")
+    return now
+
+
 def local_now(schedule: Schedule, now: datetime | None = None) -> datetime:
     """The current moment expressed in the schedule's timezone (`now` is injectable for tests).
 
     `now` must be timezone-aware: reading a naive time as local or as UTC would silently
     put the day boundary in the wrong place, so it is rejected.
     """
-    if now is not None and now.utcoffset() is None:
-        raise ValueError("now must be a timezone-aware datetime")
+    if now is not None:
+        require_aware(now)
     moment = now or datetime.now(UTC)
     return moment.astimezone(ZoneInfo(schedule.timezone))
 

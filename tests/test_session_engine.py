@@ -17,9 +17,9 @@ from app.steps import (
     step_id_matches,
     triage_enabled,
 )
-from tests.helpers import FAKE_CARD_ID, FAKE_HASH, fake_card, fake_event
+from tests.helpers import FAKE_CARD_ID, FAKE_VERSION, fake_card, fake_event
 
-H8 = FAKE_HASH[:8]
+H8 = FAKE_VERSION[:8]
 DISTRACTORS = ["16 July 1969", "20 July 1970", "21 August 1969"]
 FULL_LADDER = '["choice", "cloze", "assemble"]'
 
@@ -51,7 +51,7 @@ def test_triage_is_unavailable_when_switched_off():
 
 
 # ---------------------------------------------------------------- step ids
-def test_step_ids_carry_the_check_hash_prefix():
+def test_step_ids_carry_the_check_version_prefix():
     row = fake_card(
         rungs_json=FULL_LADDER,
         cloze_key="20 July 1969",
@@ -292,9 +292,9 @@ def test_a_rung_gets_one_retry_then_the_ladder_gives_up():
     assert derive_card_stage(row, events).stage == "closed"
 
 
-def test_events_under_an_older_hash_are_ignored_by_the_ladder():
+def test_events_under_an_older_version_are_ignored_by_the_ladder():
     row = fake_card()
-    old_miss = fake_event(**{**miss(), "check_hash": "f" * 64})
+    old_miss = fake_event(**{**miss(), "check_version": "f" * 64})
     assert derive_card_stage(row, [old_miss]).stage == "closed"
     assert current_events(row, [old_miss, miss(order=2)]) == [miss(order=2)]
 
@@ -367,13 +367,13 @@ def test_triage_and_flash_do_not_make_a_card_ready():
     assert engine.card_is_ready(row, events) is False
 
 
-def test_a_primary_check_under_an_older_hash_does_not_count():
+def test_a_primary_check_under_an_older_version_does_not_count():
     row = fake_card()
     old = fake_event(
         kind="choice",
         accepted_order=1,
         answer=row["option"],
-        check_hash="f" * 64,
+        check_version="f" * 64,
         step_id=f"p1:choice:{FAKE_CARD_ID}:ffffffff:0",
     )
     assert engine.card_is_ready(row, [old]) is False

@@ -20,7 +20,7 @@ def event(event_id: str, step_id: str | None, session_id: str = "first", **extra
         "answer": "Paris",
         "elapsed_ms": 500,
         "step_id": step_id,
-        "check_hash": "h",
+        "check_version": "h",
         **extra,
     }
 
