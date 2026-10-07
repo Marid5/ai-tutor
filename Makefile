@@ -20,4 +20,5 @@ validate:
 	.venv/bin/python scripts/validate_content.py
 
 user:
+	$(if $(NAME),,$(error NAME is required, e.g. make user NAME=ada))
 	.venv/bin/python -m app.cli create-user $(NAME) $(ARGS)

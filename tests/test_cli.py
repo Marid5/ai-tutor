@@ -24,15 +24,17 @@ def cli_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def run_cli(env: dict[str, str], *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+def run_cli(env: dict[str, str], *args: str, stdin: str | None = "") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "app.cli", *args],
-        input=stdin if stdin is not None else "",
+        input=stdin,
+        stdin=None if stdin is not None else subprocess.DEVNULL,
         capture_output=True,
         text=True,
         env=env,
         cwd=ROOT,
         timeout=60,
+        start_new_session=True,  # no controlling terminal, so getpass reads stdin
     )
 
 
@@ -238,3 +240,62 @@ def test_interactive_password_mismatch_creates_nothing(cli_env, monkeypatch, cap
 
     assert "do not match" in capsys.readouterr().err
     assert open_db(cli_env).list_users() == []
+
+
+def test_backup_rotation_ignores_lookalikes_and_keeps_the_new_file(cli_env, tmp_path):
+    run_cli(cli_env, "create-user", "ada", "--password-stdin", stdin=GOOD_PASSWORD)
+    out = tmp_path / "backups"
+    out.mkdir()
+    (out / "ai_tutor-manual-keep.db").write_bytes(b"mine")
+    (out / "ai_tutor-20991231-235959.db").write_bytes(b"from the future")
+
+    result = run_cli(cli_env, "backup", "--out", str(out), "--keep", "1")
+
+    assert result.returncode == 0, result.stderr
+    written = Path(result.stdout.strip().split(": ", 1)[-1])
+    assert written.exists()
+    assert (out / "ai_tutor-manual-keep.db").read_bytes() == b"mine"
+    assert not (out / "ai_tutor-20991231-235959.db").exists()
+    assert sqlite3.connect(written).execute("SELECT count(*) FROM users").fetchone() == (1,)
+
+
+def test_backup_is_owner_only(cli_env, tmp_path):
+    run_cli(cli_env, "create-user", "ada", "--password-stdin", stdin=GOOD_PASSWORD)
+
+    result = run_cli(cli_env, "backup", "--out", str(tmp_path / "b"))
+
+    written = Path(result.stdout.strip().split(": ", 1)[-1])
+    assert written.stat().st_mode & 0o777 == 0o600
+
+
+def test_interactive_prompt_at_end_of_input_is_a_clean_error(cli_env):
+    result = run_cli(cli_env, "create-user", "ada", stdin=None)
+
+    assert result.returncode == 1
+    assert "no password given" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert open_db(cli_env).list_users() == []
+
+
+def test_ctrl_c_at_the_prompt_aborts_quietly(cli_env, monkeypatch, capsys):
+    from app import cli
+
+    def interrupt(prompt=""):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.getpass, "getpass", interrupt)
+    monkeypatch.setenv("DATABASE_PATH", cli_env["DATABASE_PATH"])
+
+    assert cli.main(["create-user", "ada"]) == 1
+
+    assert "Aborted." in capsys.readouterr().err
+
+
+def test_bad_environment_value_is_a_clean_error(cli_env):
+    cli_env["COOKIE_SECURE"] = "maybe"
+
+    result = run_cli(cli_env, "list-users")
+
+    assert result.returncode == 1
+    assert "COOKIE_SECURE" in result.stderr
+    assert "Traceback" not in result.stderr

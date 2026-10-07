@@ -9,6 +9,8 @@ install before the server has ever started.
 
 import argparse
 import getpass
+import os
+import re
 import sqlite3
 import sys
 from collections.abc import Callable, Sequence
@@ -21,6 +23,7 @@ from app.settings import load_settings
 
 BACKUP_PREFIX = "ai_tutor-"
 BACKUP_SUFFIX = ".db"
+BACKUP_NAME = re.compile(r"ai_tutor-\d{8}-\d{6}\.db")
 DEFAULT_KEEP = 14
 
 
@@ -32,8 +35,12 @@ def _read_password(from_stdin: bool) -> str:
     if from_stdin:
         line = sys.stdin.readline()
         return line.removesuffix("\n").removesuffix("\r")
-    first = getpass.getpass("Password: ")
-    if first != getpass.getpass("Repeat password: "):
+    try:
+        first = getpass.getpass("Password: ")
+        again = getpass.getpass("Repeat password: ")
+    except EOFError:
+        raise CliError("no password given") from None
+    if first != again:
         raise CliError("the passwords do not match")
     return first
 
@@ -121,8 +128,12 @@ def backup(db: Database, args: argparse.Namespace) -> None:
         raise
     finally:
         source.close()
+    # The copy holds password hashes and session digests: owner-only, like the database itself.
+    os.chmod(partial, 0o600)
     partial.replace(target)
-    for stale in sorted(out.glob(f"{BACKUP_PREFIX}*{BACKUP_SUFFIX}"), reverse=True)[args.keep :]:
+    # Rotate only files this command names; the backup just written is always kept.
+    others = sorted((p for p in out.iterdir() if BACKUP_NAME.fullmatch(p.name) and p != target), reverse=True)
+    for stale in others[args.keep - 1 :]:
         stale.unlink()
     print(f"Backup written: {target}")
 
@@ -192,8 +203,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except CliError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
-    except (OSError, sqlite3.Error) as error:
+    except (OSError, ValueError, sqlite3.Error) as error:
         print(f"Error: {error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("Aborted.", file=sys.stderr)
         return 1
     return 0
 
