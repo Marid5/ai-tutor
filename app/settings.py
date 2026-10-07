@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
 
 
 @dataclass(frozen=True)
@@ -26,10 +27,14 @@ class Settings:
 
 
 def _flag(env: Mapping[str, str], name: str, default: bool) -> bool:
-    value = env.get(name)
-    if value is None:
+    value = env.get(name, "").strip().lower()
+    if not value:
         return default
-    return value.strip().lower() in _TRUE_VALUES
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    raise ValueError(f"{name} must be one of 1/true/yes/on or 0/false/no/off, got {value!r}")
 
 
 def _number(env: Mapping[str, str], name: str, default: int) -> int:
@@ -37,9 +42,12 @@ def _number(env: Mapping[str, str], name: str, default: int) -> int:
     if value is None:
         return default
     try:
-        return int(value)
+        number = int(value)
     except ValueError:
         raise ValueError(f"{name} must be an integer, got {value!r}") from None
+    if number < 1:
+        raise ValueError(f"{name} must be at least 1, got {number}")
+    return number
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:

@@ -62,3 +62,36 @@ def test_invalid_number_names_the_variable(var):
 def test_defaults_to_process_environment(monkeypatch):
     monkeypatch.setenv("REGISTRATION", "open")
     assert load_settings().registration_open is True
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on", "TRUE", "Yes", " On ", "\ttrue\n"])
+def test_flag_true_variants(value):
+    assert load_settings({"COOKIE_SECURE": value, "TRUST_PROXY": value}).cookie_secure is True
+    assert load_settings({"COOKIE_SECURE": value, "TRUST_PROXY": value}).trust_proxy is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "FALSE", "No", " Off ", "\tfalse\n"])
+def test_flag_false_variants(value):
+    assert load_settings({"COOKIE_SECURE": value, "TRUST_PROXY": value}).cookie_secure is False
+    assert load_settings({"COOKIE_SECURE": value, "TRUST_PROXY": value}).trust_proxy is False
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_flag_empty_uses_default(value):
+    s = load_settings({"COOKIE_SECURE": value, "TRUST_PROXY": value})
+    assert s.cookie_secure is True
+    assert s.trust_proxy is False
+
+
+@pytest.mark.parametrize("var", ["COOKIE_SECURE", "TRUST_PROXY"])
+@pytest.mark.parametrize("value", ["fasle", "ture", "2", "enabled"])
+def test_flag_typo_names_the_variable(var, value):
+    with pytest.raises(ValueError, match=var):
+        load_settings({var: value})
+
+
+@pytest.mark.parametrize("var", ["REGISTER_LIMIT_PER_HOUR", "LOGIN_IP_LIMIT", "LOGIN_USER_FAIL_LIMIT"])
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_number_below_one_names_the_variable(var, value):
+    with pytest.raises(ValueError, match=var):
+        load_settings({var: value})
