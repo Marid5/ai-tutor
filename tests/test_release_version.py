@@ -17,6 +17,17 @@ def run(root: Path) -> subprocess.CompletedProcess:
     )
 
 
+def current_version() -> str:
+    return (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+
+
+def replace_in(path: Path, old: str, new: str) -> None:
+    """Rewrite a file and make sure the edit really happened, so a test cannot pass vacuously."""
+    text = path.read_text(encoding="utf-8")
+    assert old in text, f"{old!r} not found in {path.name}"
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+
 def copy_release_files(target: Path) -> Path:
     (target / "frontend").mkdir(parents=True)
     for name in ("VERSION", "CHANGELOG.md", "frontend/package.json"):
@@ -43,15 +54,13 @@ def test_mismatching_version_file_fails(tmp_path):
 
 def test_mismatching_changelog_fails(tmp_path):
     repo = copy_release_files(tmp_path / "repo")
-    changelog = repo / "CHANGELOG.md"
-    changelog.write_text(changelog.read_text(encoding="utf-8").replace("0.1.0", "0.2.0"), encoding="utf-8")
+    replace_in(repo / "CHANGELOG.md", f"[{current_version()}]", "[9.8.7]")
     assert run(repo).returncode == 1
 
 
 def test_mismatching_package_version_fails(tmp_path):
     repo = copy_release_files(tmp_path / "repo")
-    package = repo / "frontend" / "package.json"
-    package.write_text(package.read_text(encoding="utf-8").replace('"0.1.0"', '"0.3.0"'), encoding="utf-8")
+    replace_in(repo / "frontend" / "package.json", f'"version": "{current_version()}"', '"version": "9.8.7"')
     assert run(repo).returncode == 1
 
 

@@ -63,24 +63,31 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    env:
+      GIT_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build the image
-        run: docker compose build
-      - name: Start the app
+      - name: Prepare the environment
         run: |
           cp .env.example .env
           mkdir -p data
           sudo chown 10001:10001 data
-          docker compose up -d
+      - name: Build the image
+        run: docker compose build
+      - name: Start the app
+        run: docker compose up -d
       - name: Wait for the health check
         run: |
           for _ in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8000/api/health; then exit 0; fi
+            if curl -fsS http://127.0.0.1:8000/api/health > health.json; then exit 0; fi
             sleep 1
           done
           docker compose logs --tail 50 app
           exit 1
+      - name: The build identifier reaches the running app
+        run: |
+          cat health.json
+          grep -Eq "\"git_sha\": ?\"${GIT_SHA}\"" health.json
       - name: The port is published on loopback only
         run: |
           published="$(docker compose port app 8000)"

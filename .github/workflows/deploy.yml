@@ -15,8 +15,9 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -25,7 +26,7 @@ jobs:
       - name: Check that deployment is configured
         id: config
         run: |
-          if [ -z "$DEPLOY_HOST" ]; then
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
             echo "Deployment is not configured — see docs/deploy.md"
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else

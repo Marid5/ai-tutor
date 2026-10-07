@@ -1,6 +1,8 @@
 """Deployment files must not expose the app beyond the host's loopback or Docker bridge."""
 
 import re
+import shlex
+from fnmatch import fnmatch
 from pathlib import Path
 
 import yaml
@@ -86,3 +88,50 @@ def test_workflows_are_valid_yaml_with_least_privilege():
         assert workflow["permissions"] == {"contents": "read"}, name
     deploy = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
     assert "StrictHostKeyChecking" not in deploy
+
+
+def dockerignore_patterns() -> list[str]:
+    return [
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+
+
+def is_ignored(path: str) -> bool:
+    """Whether .dockerignore keeps `path` (or one of its parent folders) out of the build context."""
+    parts = path.strip("/").split("/")
+    candidates = ["/".join(parts[: i + 1]) for i in range(len(parts))]
+    ignored = False
+    for pattern in dockerignore_patterns():
+        negated = pattern.startswith("!")
+        glob = pattern.lstrip("!").strip("/")
+        if any(fnmatch(candidate, glob) for candidate in candidates):
+            ignored = not negated
+    return ignored
+
+
+def dockerfile_copy_sources() -> list[str]:
+    sources = []
+    for line in (ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines():
+        if not line.startswith("COPY "):
+            continue
+        words = shlex.split(line)[1:]
+        if any(word.startswith("--from=") for word in words):
+            continue  # copied from another build stage, not from the context
+        sources += [word for word in words[:-1] if not word.startswith("--")]
+    return sources
+
+
+def test_dockerfile_copy_sources_exist_and_are_not_ignored():
+    sources = dockerfile_copy_sources()
+    assert "app/" in sources and "VERSION" in sources and "frontend/package-lock.json" in sources
+    for source in sources:
+        assert (ROOT / source).exists(), f"COPY source missing: {source}"
+        assert not is_ignored(source), f"COPY source excluded by .dockerignore: {source}"
+
+
+def test_dockerignore_keeps_deploy_and_agent_files_out_of_the_image():
+    for name in ("deploy/", ".superpowers/", ".git"):
+        assert name in dockerignore_patterns()
+        assert is_ignored(name)

@@ -37,10 +37,12 @@ install -d -o deploy -g deploy -m 0700 /home/deploy/.ssh
 
 Two layers: `ufw` for the host, and a `DOCKER-USER` block, because Docker writes its own iptables rules ahead of `ufw` and a published container port is reachable from the internet even with `ufw` on. The block is the safety net in case someone publishes a port on `0.0.0.0` by mistake.
 
-Find the public network interface (it is often `eth0`, but may be `ens3`, `enp1s0`, …) and use it below instead of `eth0`:
+Install `ufw` if the image does not have it, and find the public network interface (often `eth0`, but it may be `ens3`, `enp1s0`, ...):
 
 ```bash
-ip route show default
+apt-get install -y ufw
+IFACE="$(ip -o route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}')"
+echo "Public interface: $IFACE"
 ```
 
 **Before changing anything, arm an automatic rollback.** A wrong firewall rule can lock you out of SSH; this timer turns the firewall off after five minutes unless you cancel it:
@@ -63,28 +65,30 @@ ufw allow 443/udp
 ufw allow from 172.16.0.0/12
 ```
 
-Back up `/etc/ufw/after.rules`, then append the `DOCKER-USER` block at the end of the file. Traffic from the internet to containers may only reach ports 80 and 443; replies and everything the containers send out are untouched (those packets do not enter through the public interface):
+Back up `/etc/ufw/after.rules`, then append the `DOCKER-USER` block at the end of the file. Traffic from the internet to containers may only reach ports 80 and 443; replies and everything the containers send out are untouched (those packets do not enter through the public interface). The heredoc is unquoted on purpose, so `$IFACE` is filled in with the interface found above:
 
 ```bash
 cp /etc/ufw/after.rules /etc/ufw/after.rules.bak
-cat >> /etc/ufw/after.rules <<'RULES'
+cat >> /etc/ufw/after.rules <<RULES
 
 # BEGIN docker-user
 *filter
 :DOCKER-USER - [0:0]
 -F DOCKER-USER
 -A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
--A DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 80 -j RETURN
--A DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 443 -j RETURN
--A DOCKER-USER -i eth0 -p udp -m conntrack --ctorigdstport 443 -j RETURN
--A DOCKER-USER -i eth0 -j DROP
+-A DOCKER-USER -i $IFACE -p tcp -m conntrack --ctorigdstport 80 -j RETURN
+-A DOCKER-USER -i $IFACE -p tcp -m conntrack --ctorigdstport 443 -j RETURN
+-A DOCKER-USER -i $IFACE -p udp -m conntrack --ctorigdstport 443 -j RETURN
+-A DOCKER-USER -i $IFACE -j DROP
 -A DOCKER-USER -j RETURN
 COMMIT
 # END docker-user
 RULES
 ```
 
-Enable the firewall and check that nothing broke:
+This block covers IPv4, which is how Docker publishes ports by default. If you have enabled IPv6 for Docker (`"ip6tables": true` in `/etc/docker/daemon.json`), add the same block without the `-F` line to `/etc/ufw/after6.rules`, with `ip6tables` semantics; if you have not, leave it alone. Either way, never publish an app port without an explicit address (see `docker-compose.yml`).
+
+Enable the firewall:
 
 ```bash
 ufw --force enable
@@ -93,13 +97,17 @@ ufw status verbose
 iptables -S DOCKER-USER
 ```
 
-Open a **second** terminal and log in over SSH again. Only when that works, and (after step 6) your domain still answers, cancel the rollback timer:
+`iptables -S DOCKER-USER` must show the `-i <your interface> -j DROP` line. If it does not, the block was not loaded: fix it before going on.
+
+**Now confirm you can still get in, and only then cancel the rollback.** The timer is still running (you have five minutes from the moment you armed it). Open a **second** terminal and log in over SSH again with a fresh connection. As soon as that works:
 
 ```bash
 systemctl stop firewall-rollback.timer
 ```
 
-If you get locked out, wait five minutes: the timer disables the firewall by itself. To undo the firewall for good, run `ufw --force disable && iptables -F DOCKER-USER` and delete the `docker-user` block from `/etc/ufw/after.rules`.
+If the new login fails, do nothing: within five minutes the timer disables the firewall and you can get back in. To undo the firewall for good, run `ufw --force disable && iptables -F DOCKER-USER` and delete the `docker-user` block from `/etc/ufw/after.rules`.
+
+Keep that second session open while you continue; step 7 checks the domain and the closed port, and a working session is your way back if something turns out wrong. The real proof that the firewall does its job is the external port check in step 7, not the rule listing.
 
 ## 4. Get the code
 
@@ -111,10 +119,20 @@ sudo -u deploy ssh-keygen -t ed25519 -N "" -C "ai-tutor server read-only" -f /ho
 cat /home/deploy/.ssh/repo_deploy_key.pub
 ```
 
-In your GitHub repository, open *Settings → Deploy keys → Add deploy key*, paste the public key and leave *Allow write access* **unchecked**. Then clone, using that key:
+In your GitHub repository, open *Settings → Deploy keys → Add deploy key*, paste the public key and leave *Allow write access* **unchecked**.
+
+Trust GitHub's host key only after comparing it with the fingerprints GitHub publishes (see "GitHub's SSH key fingerprints" in the GitHub documentation, docs.github.com):
 
 ```bash
-sudo -u deploy sh -c 'ssh-keyscan github.com >> /home/deploy/.ssh/known_hosts'
+ssh-keyscan -t ed25519 github.com > /tmp/github_host_key
+ssh-keygen -lf /tmp/github_host_key
+```
+
+If the printed `SHA256:...` value equals the published ed25519 fingerprint, install it and clone, using the deploy key:
+
+```bash
+sudo -u deploy sh -c 'cat >> /home/deploy/.ssh/known_hosts' < /tmp/github_host_key
+rm /tmp/github_host_key
 sudo -u deploy GIT_SSH_COMMAND="ssh -i /home/deploy/.ssh/repo_deploy_key -o IdentitiesOnly=yes" \
   git clone git@github.com:YOUR-ACCOUNT/ai-tutor.git /srv/ai-tutor
 sudo -u deploy git -C /srv/ai-tutor config core.sshCommand \
@@ -156,7 +174,7 @@ Caddy requests a certificate on the first visit. Open `https://tutor.example.com
 
 ## 7. Check the setup
 
-Run these after the first deploy and after every deploy that touches the network or proxy configuration.
+Run these after the first deploy and after every deploy that touches the network or proxy configuration. Keep a second SSH session open while you do.
 
 1. **Health through the domain**, with the commit that is running:
    ```bash
@@ -194,22 +212,21 @@ Copy `data/backups/` off the server regularly: a backup on the same disk does no
 
 On every push to `main`, once CI has passed, `.github/workflows/deploy.yml` logs in to the server and runs `deploy/remote-deploy.sh`.
 
-On your computer, create a dedicated key for this:
+On your own computer, create a dedicated key pair for this. It produces `ai_tutor_actions_key` (private, goes to GitHub) and `ai_tutor_actions_key.pub` (public, goes to the server):
 
 ```bash
 ssh-keygen -t ed25519 -N "" -C "ai-tutor actions deploy" -f ./ai_tutor_actions_key
+cat ai_tutor_actions_key.pub
 ```
 
-On the server, authorise it for `deploy` with a **forced command**: whatever the client asks for, this key can only run the deploy script, with no terminal and no port forwarding:
+On the server, authorise the public key for `deploy` with a **forced command**: whatever the client asks for, this key can only run the deploy script, with no terminal and no port forwarding. Put the single line printed above in place of `PASTE-PUBLIC-KEY-HERE`:
 
 ```bash
-sudo -u deploy sh -c 'echo "command=\"/srv/ai-tutor/deploy/remote-deploy.sh\",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding $(cat ai_tutor_actions_key.pub)" >> /home/deploy/.ssh/authorized_keys'
+sudo -u deploy sh -c 'echo "command=\"/srv/ai-tutor/deploy/remote-deploy.sh\",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding PASTE-PUBLIC-KEY-HERE" >> /home/deploy/.ssh/authorized_keys'
 sudo -u deploy chmod 600 /home/deploy/.ssh/authorized_keys
 ```
 
-(Paste the public key into the command if the file is on another machine.)
-
-Collect the server's host key so the workflow can verify it instead of trusting the first connection blindly:
+Collect the server's host key so the workflow can verify it instead of trusting the first connection blindly. Use exactly the string you will store as `DEPLOY_HOST` (known_hosts matches by that name), and compare the fingerprint with the one the server shows (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`):
 
 ```bash
 ssh-keyscan -t ed25519 203.0.113.10

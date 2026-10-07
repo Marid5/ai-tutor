@@ -32,7 +32,8 @@ echo "Deploying $HEAD_SHA"
 
 # The first deploy has no running container, hence nothing to back up. A failed
 # backup stops the deploy: do not replace the app when its data is not safe.
-if docker compose ps --status running --services | grep -qx app; then
+running="$(docker compose ps --status running --services)"
+if grep -qx app <<<"$running"; then
   docker compose exec -T app python -m app.cli backup
 fi
 
