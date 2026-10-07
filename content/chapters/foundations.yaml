@@ -15,8 +15,8 @@ lessons:
         distractors: [a whole sentence or clause, a full paragraph of text, a complete line of code]
         hint: 'Think of how "unhappiness" might be split up.'
         note: >-
-          A tokenizer keeps common words whole and splits rarer ones into pieces, so a single
-          word can cost several tokens.
+          Punctuation, spaces and digits get tokens too, so a token count rarely matches a word
+          count.
         source: Original text
       - id: rare-word-split
         prompt: What does a tokenizer do with a long, rare word?
@@ -43,7 +43,7 @@ lessons:
         prompt: What does it mean when two token embeddings are close together?
         answer: The two tokens tend to have similar meanings.
         option: similar meanings
-        distractors: [similar spellings, opposite meanings, equal lengths]
+        distractors: [similar spellings, consecutive ids, equal lengths]
         note: >-
           Training places tokens that are used in similar contexts near each other, which is
           why "cat" ends up closer to "dog" than to "invoice".
@@ -62,11 +62,11 @@ lessons:
           their information. In a text generator a token can look back, but never ahead.
         source: Original text
       - id: transformer-architecture
-        prompt: What kind of neural network are most modern LLMs built on?
-        answer: Most modern LLMs are built on transformer networks.
+        prompt: What kind of neural network are most modern language models built on?
+        answer: Most modern language models are built on transformer networks.
         option: transformer networks
         distractors: [recurrent networks, convolutional networks, Bayesian networks]
-        hint: Its name also fits a toy robot that changes shape.
+        hint: Its core ingredient is the mechanism from the previous card.
         note: >-
           Transformers replaced step-by-step recurrent processing with attention, so every
           position of a training text can be processed in parallel.
@@ -96,10 +96,10 @@ lessons:
           repeating this single prediction.
         source: Original text
       - id: probability-distribution
-        prompt: What does the model output for the next position?
+        prompt: In what form does the model give its prediction for the next token?
         answer: It outputs a probability distribution over tokens.
         option: a probability distribution
-        distractors: [one fixed word, a confidence rating, a parse tree]
+        distractors: [one fixed word, a sentence outline, a parse tree]
         note: >-
           Every token in the vocabulary gets a probability. A separate sampling step then picks
           one of them.
@@ -115,7 +115,7 @@ lessons:
         source: Original text
       - id: context-window
         prompt: What is a model's context window?
-        answer: The context window is the maximum number of tokens the model can take in at once.
+        answer: The context window is the maximum number of tokens the model can handle at once.
         option: the maximum number of tokens
         distractors: [the longest allowed response time, the size of training data, the number of model layers]
         hint: Count both the prompt and the reply.

@@ -1,6 +1,6 @@
 schema_version: 1
 title: How LLMs work
-description: A short course on what happens inside a large language model.
+description: A short course on how large language models work, how they are trained, and how to use them well.
 language: en
 exercises:
   triage: true

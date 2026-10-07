@@ -9,7 +9,7 @@ lessons:
         answer: Pre-training uses vast amounts of text, such as web pages and books.
         option: vast amounts of text
         distractors: [a small labeled dataset, live conversations with users, rules written by experts]
-        hint: Think of scale, a large share of the public web.
+        hint: Think about how long a person would need to read it all.
         note: >-
           The text supplies its own training signal. Every next token is an answer to predict,
           so no human labeling is needed.
@@ -26,7 +26,7 @@ lessons:
           a readable copy of the training text.
         source: Original text
       - id: gradient-descent
-        prompt: Which method adjusts the weights to reduce prediction error?
+        prompt: Which method is used to adjust a model's weights during training?
         answer: Training uses gradient descent to shrink the prediction error.
         option: gradient descent
         distractors: [random search, manual tuning, genetic algorithms]
@@ -58,9 +58,9 @@ lessons:
     title: Fine-tuning and feedback
     cards:
       - id: what-is-fine-tuning
-        prompt: What is fine-tuning?
-        answer: Fine-tuning continues training a model on a small, focused dataset.
-        option: a small, focused dataset
+        prompt: During fine-tuning, what does a pre-trained model keep training on?
+        answer: Fine-tuning continues training a pre-trained model on a smaller, focused dataset.
+        option: a smaller, focused dataset
         distractors: [the held-out test set, randomly shuffled token streams, a single long document]
         hint: The model already knows language; this step specializes it.
         note: >-
@@ -79,7 +79,7 @@ lessons:
       - id: rlhf-human-input
         prompt: What do people do in RLHF (reinforcement learning from human feedback)?
         answer: They compare pairs of responses and choose the better one.
-        option: choose the better one
+        option: compare pairs of responses
         distractors: [write the training code, label every single token, rewrite the model weights]
         hint: Think of an A/B test.
         note: >-

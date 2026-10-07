@@ -12,7 +12,7 @@ lessons:
         hint: Heat means more motion.
         note: >-
           Temperature reshapes the token probabilities before sampling. Low values favor the
-          most likely tokens, high values give unlikely tokens more of a chance.
+          most likely tokens; high values give unlikely tokens more of a chance.
         source: Original text
       - id: top-k-sampling
         prompt: What does top-k sampling restrict the next-token choice to?
@@ -24,7 +24,7 @@ lessons:
           slip in. Top-p does the same with a probability threshold instead of a fixed count.
         source: Original text
       - id: what-is-a-hallucination
-        prompt: What is a hallucination in an LLM?
+        prompt: What is a hallucination in a model's output?
         answer: A hallucination is a plausible but false statement from the model.
         option: plausible but false
         distractors: [true but outdated, accurate but impolite, random and unreadable]
@@ -35,9 +35,9 @@ lessons:
         source: Original text
       - id: why-hallucinations-happen
         prompt: Why do models hallucinate?
-        answer: Models are trained to produce likely text, not verified facts.
-        option: likely text
-        distractors: [deliberate lies, short answers, random noise]
+        answer: Models hallucinate because they produce likely text, not verified facts.
+        option: they produce likely text
+        distractors: [they intend to deceive, they run too slowly, their tokens get corrupted]
         note: >-
           Nothing in next-token prediction checks a claim against the world, and there is no
           intent to deceive, so a fluent answer can simply be made up.
@@ -46,11 +46,11 @@ lessons:
     title: Prompting
     cards:
       - id: few-shot-prompting
-        prompt: What is few-shot prompting?
+        prompt: What does few-shot prompting add to the prompt?
         answer: Few-shot prompting puts a few worked examples in the prompt.
         option: worked examples
-        distractors: [repeated instructions, banned words, spelling errors]
-        hint: Here "shot" means example.
+        distractors: [formatting rules, sampling settings, retrieved documents]
+        hint: Zero-shot prompting gives the task with none of these.
         note: >-
           The examples show the format and style you want, and the model picks up the pattern
           without any retraining.
@@ -59,7 +59,7 @@ lessons:
         prompt: What is a system prompt?
         answer: A system prompt sets standing instructions for the whole conversation.
         option: standing instructions
-        distractors: [model weights, user passwords, billing settings]
+        distractors: [user messages, sampling settings, model weights]
         note: >-
           It is usually written by the app, not the user, and sets role, tone and rules. It is
           still just text in the context, so it guides behavior rather than guarantees it.
@@ -69,7 +69,7 @@ lessons:
         answer: The written steps become context for later tokens.
         option: context for later tokens
         distractors: [extra memory in weights, a hidden second model, faster token generation speed]
-        hint: The model can read what it has already written.
+        hint: Think of long division on paper versus in your head.
         note: >-
           Each token gets a limited amount of computation, so spelling out intermediate results
           lets the model build on them instead of jumping straight to an answer.
@@ -81,7 +81,7 @@ lessons:
         prompt: What does retrieval-augmented generation (RAG) do?
         answer: Before answering, RAG adds retrieved documents to the prompt.
         option: adds retrieved documents to the prompt
-        distractors: [retrains the model on every question, copies the prompt into the weights, deletes outdated facts from the model]
+        distractors: [retrains the model on retrieved documents, copies retrieved documents into the weights, deletes outdated facts from the model]
         hint: Think of an open-book exam.
         note: >-
           A search step finds passages relevant to the question, for example in company
@@ -97,7 +97,7 @@ lessons:
           the weights stay untouched.
         source: Original text
       - id: tool-calls
-        prompt: How does a model use a tool, such as a calculator or a search API?
+        prompt: How does a model get an app to run a calculator or a search?
         answer: It outputs a structured tool call, and the app runs it.
         option: a structured tool call
         distractors: [a spoken voice command, a request for retraining, a direct database write]
@@ -107,7 +107,7 @@ lessons:
           the result as new text in the context.
         source: Original text
       - id: what-is-an-eval
-        prompt: What is an eval for an LLM application?
+        prompt: What is an eval for an application built on a model?
         answer: An eval is a fixed set of test cases with expected outcomes.
         option: a fixed set of test cases
         distractors: [a running log of user complaints, a copy of the training data, a public leaderboard of model scores]
@@ -117,7 +117,7 @@ lessons:
           whether quality improved or quietly got worse.
         source: Original text
       - id: llm-as-a-judge
-        prompt: What happens in LLM-as-a-judge evaluation?
+        prompt: What happens when a model is used as a judge in evaluation?
         answer: One model grades another model's outputs against a rubric.
         option: grades another model's outputs
         distractors: [retrains another model's weights, writes another model's prompts, hides another model's mistakes]
