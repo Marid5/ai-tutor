@@ -1,0 +1,49 @@
+# Reverse proxy for AI Tutor. Replace tutor.example.com with your domain.
+# Caddy obtains and renews the TLS certificate by itself; ports 80 and 443 must
+# be reachable from the internet.
+#
+# The app must run with TRUST_PROXY=true in .env (the .env.example default), so
+# rate limits see the real client address from X-Forwarded-For. Only do that
+# when this proxy is the only way to reach the app: the app port is bound to
+# 127.0.0.1 (and 172.17.0.1 for variant B), never to a public address.
+
+# Shared by both variants: access log with rotation, HSTS.
+(ai_tutor_common) {
+	log {
+		output file /var/log/caddy/ai-tutor-access.log {
+			roll_size 50MiB
+			roll_keep 10
+		}
+	}
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}
+
+# ---------------------------------------------------------------------------
+# Variant A: Caddy runs on the host (installed from the Caddy apt repository).
+# Start the app with the base file only: docker compose up -d --build
+# ---------------------------------------------------------------------------
+tutor.example.com {
+	import ai_tutor_common
+	reverse_proxy 127.0.0.1:8000
+}
+
+# ---------------------------------------------------------------------------
+# Variant B: Caddy runs in its own container. Use this block instead of the one
+# above, not in addition to it.
+#
+# 1. In the proxy's compose file, let the container reach the host:
+#      extra_hosts:
+#        - "host.docker.internal:host-gateway"
+#    (host-gateway resolves to the Docker bridge address, 172.17.0.1.)
+# 2. Start the app with the edge override, which also binds 172.17.0.1:8000:
+#      docker compose -f docker-compose.yml -f docker-compose.edge.yml up -d --build
+#    and add COMPOSE_FILE=docker-compose.yml:docker-compose.edge.yml to .env
+#    (Compose reads it from there), so deploy/remote-deploy.sh does the same.
+# 3. Mount a directory for the log, e.g. ./logs:/var/log/caddy, and mount the
+#    directory that holds this file instead of the single file, so an editor
+#    that replaces the file cannot leave the container with a stale copy.
+#
+# tutor.example.com {
+#	import ai_tutor_common
+#	reverse_proxy host.docker.internal:8000
+# }

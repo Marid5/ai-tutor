@@ -1,0 +1,44 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - name: Check that deployment is configured
+        id: config
+        run: |
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "Deployment is not configured — see docs/deploy.md"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Prepare the SSH connection
+        if: steps.config.outputs.configured == 'true'
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy
+        if: steps.config.outputs.configured == 'true'
+        # The server key forces deploy/remote-deploy.sh whatever is asked here.
+        run: ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy@"$DEPLOY_HOST" deploy

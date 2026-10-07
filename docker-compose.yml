@@ -1,0 +1,14 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    # Loopback only: the reverse proxy on the host is the one public entry point.
+    # Never write "8000:8000": that publishes the port on every interface.
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

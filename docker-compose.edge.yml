@@ -1,0 +1,10 @@
+# Override for a reverse proxy that runs in its own container and reaches the
+# app through host.docker.internal (the Docker bridge address, 172.17.0.1).
+# Without it the app only listens on 127.0.0.1, which a container cannot reach.
+# Use it together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.edge.yml up -d --build
+# Compose merges port lists, so the loopback binding stays and this one is added.
+services:
+  app:
+    ports:
+      - "172.17.0.1:8000:8000"
