@@ -1,4 +1,4 @@
-.PHONY: setup test lint format validate user
+.PHONY: setup test lint format validate user build dev serve
 
 setup:
 	/opt/homebrew/bin/python3.12 -m venv .venv || python3 -m venv .venv
@@ -22,3 +22,21 @@ validate:
 user:
 	$(if $(NAME),,$(error NAME is required, e.g. make user NAME=ada))
 	.venv/bin/python -m app.cli create-user $(NAME) $(ARGS)
+
+# Build the web client and publish it where the backend serves static files.
+build:
+	npm --prefix frontend run build
+	rm -rf static
+	cp -r frontend/dist static
+
+# Backend with auto-reload (including content YAML) plus the Vite dev server
+# on http://localhost:5173, which forwards /api to the backend. Ctrl-C stops both.
+dev:
+	trap 'kill 0' EXIT; \
+	COOKIE_SECURE=false .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --reload-dir app --reload-dir content --reload-include '*.yaml' & \
+	npm --prefix frontend run dev & \
+	wait
+
+# Production-like run: the built client served by the backend, settings from .env.
+serve: build
+	set -a; [ -f .env ] && . ./.env; set +a; .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000

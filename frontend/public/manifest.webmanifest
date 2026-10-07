@@ -1,0 +1,13 @@
+{
+  "name": "AI Tutor",
+  "short_name": "AI Tutor",
+  "description": "Spaced-repetition study app with short lessons and scheduled reviews.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#0e6ba8",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
