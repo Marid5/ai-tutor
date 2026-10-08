@@ -90,16 +90,37 @@ test('a new learner finishes the first lesson, resumes after a reload and sees t
   const boardResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/chapters');
   await tab(page, 'Home').click();
   const board = (await (await boardResponse).json()) as {
-    cards_ready: number; review_due: number; practice_available: boolean; practice_card_count: number;
+    cards_ready: number; review_due: number; review_session_size: number;
+    practice_available: boolean; practice_card_count: number;
   };
   await expectHome(page);
   await expect(page.getByText(`${board.cards_ready} of 33 cards ready`)).toBeVisible();
   expect(board.practice_available).toBe(true);
   const practice = page.getByRole('button', { name: `Practice ${board.practice_card_count} cards from finished lessons` });
   await expect(practice).toBeEnabled();
-  // Nothing is due on the day a lesson is learned, so the Review tile is shut.
-  expect(board.review_due).toBe(0);
-  await expect(page.getByRole('button', { name: 'Review Nothing due today' })).toBeDisabled();
+  // The Review tile follows the server's board. This lesson had a deliberate miss: the card was
+  // rated Again and FSRS schedules it for the same day, so cards can legitimately be due now.
+  // (practice.spec.ts covers the miss-free lesson, where nothing is due and the tile is shut.)
+  const cards = (n: number) => (n === 1 ? '1 card' : `${n} cards`);
+  if (board.review_due > 0) {
+    const review = page.getByRole('button', { name: `Review ${cards(board.review_due)}` });
+    await expect(review).toBeEnabled();
+    const started = page.waitForResponse(r => new URL(r.url()).pathname === '/api/review/start' && r.request().method() === 'POST');
+    await review.click();
+    const session = (await (await started).json()) as { mode: string; steps: unknown[]; total_cards: number };
+    // One sitting holds at most the server's per-session limit; the rest stay due for the next one.
+    const expected = Math.min(board.review_due, board.review_session_size);
+    expect(session.mode).toBe('scheduled_review');
+    expect(session.total_cards).toBe(expected);
+    expect(session.steps.length, 'the review sitting has something to study').toBeGreaterThan(0);
+    await expect(page.getByRole('button', { name: 'Leave review' })).toBeVisible();
+    await expect(page.locator('.session')).toHaveAttribute('data-phase', 'answering');
+    await expect(page.locator('.session-count')).toHaveText(`0 / ${cards(expected)}`);
+    await page.getByRole('button', { name: 'Leave review' }).click();
+    await expectHome(page);
+  } else {
+    await expect(page.getByRole('button', { name: 'Review Nothing due today' })).toBeDisabled();
+  }
 
   // Practice opens a session; leaving it returns home with the board intact.
   await practice.click();
