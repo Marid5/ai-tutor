@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.content import Card, Program, load_program
 from app.session import CLOSED_KINDS, STEP_KINDS
@@ -699,6 +700,84 @@ def test_a_finished_lesson_feeds_the_review_plan(signed_in):
     assert done["resolved_cards"] == done["total_cards"] == 2
     assert signed_in.get("/api/chapters").json()["review_due"] == 0
     assert signed_in.post("/api/review/start").status_code == 404
+
+
+def finish_with_a_miss(client, lesson_id: str) -> None:
+    """Finish a lesson, missing its first closed check."""
+    payload = start(client, lesson_id)
+    missed = False
+    for _ in range(60):
+        if not payload["steps"]:
+            break
+        step = payload["steps"][0]
+        miss = not missed and step["kind"] in CLOSED_KINDS
+        missed = missed or miss
+        text = wrong(client, step) if miss else right(client, step)
+        result = answer(client, lesson_id, step, text)
+        assert result["accepted"], result
+        payload = result["session"]
+    else:
+        raise AssertionError("lesson did not finish")
+    assert missed
+
+
+def two_learners(client):
+    """Alice on `client` and Bob on a second client of the same app and database."""
+    bob = TestClient(client.app, client=("testclient", 50001))
+    return sign_in(client, "alice"), sign_in(bob, "bob")
+
+
+def test_two_learners_review_on_the_same_day_without_colliding(client):
+    alice, bob = two_learners(client)
+    for learner in (alice, bob):
+        finish_with_a_miss(learner, "first")
+    make_due(client)
+    for learner in (alice, bob):
+        assert learner.get("/api/chapters").json()["review_due"] >= 1
+
+    alice_started = alice.post("/api/review/start")
+    assert alice_started.status_code == 200, alice_started.text
+    bob_started = bob.post("/api/review/start")
+    assert bob_started.status_code == 200, bob_started.text
+    alices, bobs = alice_started.json(), bob_started.json()
+    # Review ids are per day and slice, so both learners hold the same id.
+    assert alices["session_id"] == bobs["session_id"]
+
+    db = api_db(client)
+    alice_id, bob_id = api_user_id(client, "alice"), api_user_id(client, "bob")
+    rows = db.fetch_all("SELECT user_id FROM study_sessions WHERE id=?", (alices["session_id"],))
+    assert sorted(row["user_id"] for row in rows) == sorted([alice_id, bob_id])
+
+    bob_before = bob.get("/api/session", params={"session_id": bobs["session_id"]}).json()
+    step = alices["steps"][0]
+    assert answer(alice, alices["session_id"], step, right(alice, step))["accepted"]
+    alice_events = db.events_for_session(alice_id, alices["session_id"])
+    assert len(alice_events) == 1
+    assert db.events_for_session(bob_id, bobs["session_id"]) == []
+    assert bob.get("/api/session", params={"session_id": bobs["session_id"]}).json() == bob_before
+
+    done = drain(alice, alice.get("/api/session", params={"session_id": alices["session_id"]}).json())
+    assert done["resolved_cards"] == done["total_cards"]
+    assert db.study_session(alice_id, alices["session_id"])["status"] == "completed"
+    assert db.study_session(bob_id, bobs["session_id"])["status"] == "in_progress"
+    assert bob.get("/api/session").json()["session_id"] == bobs["session_id"]
+    assert bob.get("/api/session", params={"session_id": bobs["session_id"]}).json() == bob_before
+
+
+def test_two_learners_mixed_practice_stays_apart(client):
+    alice, bob = two_learners(client)
+    for learner in (alice, bob):
+        complete_lesson(learner, "first")
+    alices = alice.post("/api/practice/start").json()
+    bobs = bob.post("/api/practice/start").json()
+    assert alices["session_id"] != bobs["session_id"], "practice ids are random"
+    assert alice.get("/api/session", params={"session_id": bobs["session_id"]}).status_code == 404
+
+    step = alices["steps"][0]
+    assert answer(alice, alices["session_id"], step, right(alice, step))["accepted"]
+    bob_view = bob.get("/api/session", params={"session_id": bobs["session_id"]}).json()
+    assert bob_view["resolved_cards"] == 0
+    assert bob_view["steps"] == bobs["steps"]
 
 
 def test_review_without_anything_due_says_so(signed_in):

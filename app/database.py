@@ -510,7 +510,10 @@ class Database:
                     conn.execute("COMMIT")
                     return dict(active)
                 if active:
-                    conn.execute("UPDATE study_sessions SET status='abandoned' WHERE id=?", (active["id"],))
+                    conn.execute(
+                        "UPDATE study_sessions SET status='abandoned' WHERE user_id=? AND id=?",
+                        (user_id, active["id"]),
+                    )
                 session_id = f"{PRACTICE_SESSION_ID_PREFIX}{uuid.uuid4()}"
                 conn.execute(
                     """INSERT INTO study_sessions(
@@ -529,7 +532,11 @@ class Database:
                 if conn.in_transaction:
                     conn.execute("ROLLBACK")
                 raise
-            return dict(conn.execute("SELECT * FROM study_sessions WHERE id=?", (session_id,)).fetchone())
+            return dict(
+                conn.execute(
+                    "SELECT * FROM study_sessions WHERE user_id=? AND id=?", (user_id, session_id)
+                ).fetchone()
+            )
         finally:
             conn.close()
 
@@ -562,8 +569,8 @@ class Database:
         with self._transaction() as conn:
             cursor = conn.execute(
                 """UPDATE study_sessions SET status='completed',completed_at=?
-                WHERE id=? AND user_id=? AND status='in_progress'""",
-                (utc_now(), session_id, user_id),
+                WHERE user_id=? AND id=? AND status='in_progress'""",
+                (utc_now(), user_id, session_id),
             )
         return cursor.rowcount == 1
 

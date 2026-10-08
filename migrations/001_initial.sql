@@ -166,8 +166,10 @@ CREATE TABLE user_meta (
 
 -- Scheduled review (sliced into fixed-size sittings) and voluntary practice.
 -- The CHECKs reject an unknown mode or status instead of storing it silently.
+-- Session ids are unique per learner only: a review id is `review-<day>-<slice>`,
+-- so every learner reviewing on the same day holds the same one.
 CREATE TABLE study_sessions (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   mode TEXT NOT NULL CHECK (mode IN ('scheduled_review', 'lesson_practice', 'mixed_practice')),
   day_key TEXT NOT NULL,
@@ -177,7 +179,8 @@ CREATE TABLE study_sessions (
   completed_at TEXT,
   slice_index INTEGER NOT NULL DEFAULT 0,
   -- Only lesson practice sets this: the lesson being replayed.
-  lesson_id TEXT REFERENCES lessons(id)
+  lesson_id TEXT REFERENCES lessons(id),
+  PRIMARY KEY (user_id, id)
 );
 CREATE INDEX idx_study_sessions_user_status ON study_sessions(user_id, status, started_at);
 CREATE UNIQUE INDEX idx_study_sessions_review_slice

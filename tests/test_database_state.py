@@ -1,10 +1,12 @@
 """Per-learner state: schedules, events, lessons and study sessions."""
 
 import sqlite3
+import uuid
 from datetime import UTC, datetime
 
 import pytest
 
+from app import database as database_module
 from app.database import Database, StoredCard
 
 TS = datetime(2026, 10, 7, 12, 0, tzinfo=UTC).isoformat()
@@ -137,6 +139,42 @@ def test_review_sessions_are_unique_per_slice(seeded_db: Database):
     assert seeded_db.complete_study_session(user, "review-d-0") is True
     assert seeded_db.complete_study_session(user, "review-d-0") is False
     assert seeded_db.complete_study_session(user, "missing") is False
+
+
+def test_review_session_ids_are_per_learner(seeded_db: Database):
+    # Review ids are `review-<day>-<slice>`, so two learners on the same day share one.
+    alice = seeded_db.create_user("alice", "hash")
+    bob = seeded_db.create_user("bob", "hash")
+    seeded_db.create_review_session("review-d-1", alice, "d", ["capital-of-france"], slice_index=1)
+    seeded_db.create_review_session("review-d-1", bob, "d", ["powerhouse-organelle"], slice_index=1)
+
+    assert seeded_db.study_session(alice, "review-d-1")["card_ids_json"] == '["capital-of-france"]'
+    assert seeded_db.study_session(bob, "review-d-1")["card_ids_json"] == '["powerhouse-organelle"]'
+    assert [row["user_id"] for row in seeded_db.review_sessions_of_day(bob, "d")] == [bob]
+
+    assert seeded_db.complete_study_session(alice, "review-d-1") is True
+    assert seeded_db.study_session(alice, "review-d-1")["status"] == "completed"
+    assert seeded_db.study_session(bob, "review-d-1")["status"] == "in_progress"
+
+
+def test_practice_session_ids_are_per_learner(seeded_db: Database, monkeypatch: pytest.MonkeyPatch):
+    # Practice ids are random, but even a shared id must stay inside its learner.
+    alice = seeded_db.create_user("alice", "hash")
+    bob = seeded_db.create_user("bob", "hash")
+    fixed = uuid.UUID("00000000-0000-4000-8000-000000000000")
+    monkeypatch.setattr(database_module.uuid, "uuid4", lambda: fixed)
+
+    alices = seeded_db.start_practice(alice, "mixed_practice", ["capital-of-france"], "d")
+    bobs = seeded_db.start_practice(bob, "mixed_practice", ["powerhouse-organelle"], "d")
+    assert alices["id"] == bobs["id"]
+    assert (alices["user_id"], bobs["user_id"]) == (alice, bob)
+    assert bobs["card_ids_json"] == '["powerhouse-organelle"]'
+
+    # Alice replacing her practice abandons only her own row under that id.
+    monkeypatch.undo()
+    seeded_db.start_practice(alice, "lesson_practice", ["capital-of-france"], "d", lesson_id="first")
+    assert seeded_db.study_session(alice, alices["id"])["status"] == "abandoned"
+    assert seeded_db.study_session(bob, bobs["id"])["status"] == "in_progress"
 
 
 def test_practice_resumes_or_replaces_the_open_session(seeded_db: Database):
