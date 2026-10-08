@@ -111,8 +111,6 @@ CREATE TABLE card_state (
   lapses INTEGER NOT NULL DEFAULT 0,
   state TEXT NOT NULL DEFAULT 'new',
   last_review TEXT,
-  -- The check the schedule was earned against.
-  check_hash TEXT,
   PRIMARY KEY (user_id, card_id)
 );
 CREATE INDEX idx_card_state_due ON card_state(user_id, state, due);

@@ -262,7 +262,7 @@ def test_a_buffered_answer_into_an_abandoned_session_is_accepted_but_does_not_re
     assert result["accepted"] is True
     still_abandoned = api_db(signed_in).study_session(api_user_id(signed_in), first["session_id"])
     assert still_abandoned["status"] == "abandoned"
-    stored = api_db(signed_in).fetch_cards("SELECT rating FROM events WHERE step_id=?", (step["id"],))
+    stored = api_db(signed_in).fetch_all("SELECT rating FROM events WHERE step_id=?", (step["id"],))
     assert stored[0]["rating"] is not None
 
 

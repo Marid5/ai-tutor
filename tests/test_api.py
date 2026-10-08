@@ -247,7 +247,7 @@ def test_a_ladder_rung_is_never_dropped_when_the_lesson_cannot_space_it(signed_i
         raise AssertionError("lesson did not terminate")
 
     assert missed_card, "the lesson must have offered a closed check"
-    ladder = api_db(signed_in).fetch_cards(
+    ladder = api_db(signed_in).fetch_all(
         "SELECT step_id FROM events WHERE card_id=? AND step_id LIKE 'v2:%'", (missed_card,)
     )
     assert ladder, "the missed card never came back"
@@ -292,7 +292,7 @@ def test_a_forged_verdict_moves_neither_the_schedule_nor_the_ladder(signed_in):
     choice = next(step for step in payload["steps"] if step["kind"] == "choice")
     result = answer(signed_in, "first", choice, wrong(signed_in, choice), correct=True)
     assert result["correct"] is False
-    stored = api_db(signed_in).fetch_cards(
+    stored = api_db(signed_in).fetch_all(
         "SELECT rating, correct FROM events WHERE step_id=?", (choice["id"],)
     )[0]
     assert stored["rating"] == "again"
@@ -397,7 +397,7 @@ def test_progress_matches_events(signed_in):
         payload = answer(
             signed_in, "first", step, wrong(signed_in, step) if miss else right(signed_in, step)
         )["session"]
-    events = api_db(signed_in).fetch_cards("SELECT * FROM events")
+    events = api_db(signed_in).fetch_all("SELECT * FROM events")
     primaries = [event for event in events if (event["step_id"] or "").startswith("p1:")]
     progress = signed_in.get("/api/progress").json()
     assert progress["checks_30d"] == len(primaries) == 2
@@ -418,7 +418,7 @@ def test_progress_matches_events(signed_in):
 def test_editing_the_answer_resets_that_card_schedule(signed_in):
     complete_lesson(signed_in, "first")
     database = api_db(signed_in)
-    assert database.fetch_cards(
+    assert database.fetch_all(
         "SELECT 1 FROM card_state WHERE card_id='powerhouse-organelle' AND state != 'new'"
     )
 
@@ -428,7 +428,7 @@ def test_editing_the_answer_resets_that_card_schedule(signed_in):
         card.option = "Mitochondria"
 
     database.upsert_program(edited_program(edit))
-    assert not database.fetch_cards(
+    assert not database.fetch_all(
         "SELECT 1 FROM card_state WHERE card_id='powerhouse-organelle' AND state != 'new'"
     ), "a schedule earned against a different answer must not survive"
     lesson = signed_in.get("/api/chapters").json()["chapters"][0]["lessons"][0]

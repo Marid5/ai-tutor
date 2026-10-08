@@ -239,7 +239,7 @@ def _chapter_filler(
     """
     if needed <= 0:
         return []
-    rows = db.fetch_cards(
+    rows = db.fetch_all(
         f"""SELECT {CARD_COLUMNS}
         FROM cards c
         JOIN lessons l ON l.id=c.lesson_id
@@ -260,7 +260,7 @@ def _chapter_filler(
 
 # ----------------------------------------------------------------- lessons
 def _lesson_rows(db: Database, user_id: str, lesson_id: str) -> list[Any]:
-    return db.fetch_cards(
+    return db.fetch_all(
         f"""SELECT {CARD_COLUMNS}
         FROM cards c LEFT JOIN card_state s ON s.card_id=c.id AND s.user_id=?
         WHERE c.lesson_id=? AND c.retired=0 ORDER BY c.position""",
@@ -608,7 +608,7 @@ def record_answer(
 
     if _fsrs_applies(mode, kind, step_id, correct, row):
         state = fsrs.schedule(db.get_state(user_id, card_id), rating, now, program.schedule)
-        db.update_state(user_id, card_id, state, row["check_hash"])
+        db.update_state(user_id, card_id, state)
         if mode in PRACTICE_MODES and correct is False:
             fold_practice_miss_into_today_plan(
                 db, user_id, now, program.schedule, card_id, category_for(state.state, state.stability)

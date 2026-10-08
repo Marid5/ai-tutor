@@ -169,7 +169,7 @@ def _forecast(db: Database, user_id: str, now: datetime, schedule: Schedule) -> 
     belongs to the previous day when the day starts at 04:00), and anything
     already overdue is counted as due today.
     """
-    rows = db.fetch_cards(
+    rows = db.fetch_all(
         """SELECT s.due FROM card_state s JOIN cards c ON c.id=s.card_id
         JOIN lessons l ON l.id=c.lesson_id
         WHERE s.user_id=? AND s.state != 'new' AND c.retired=0 AND l.retired=0""",
@@ -211,7 +211,7 @@ def learning_metrics(db: Database, user_id: str, now: datetime, schedule: Schedu
     retention = round(correct * 100 / len(graded)) if graded else 0
 
     forecast = _forecast(db, user_id, now, schedule)
-    difficult = db.fetch_cards(
+    difficult = db.fetch_all(
         """SELECT c.id, c.prompt, c.answer, count(*) AS again_count FROM cards c
         JOIN events e ON c.id=e.card_id AND e.check_version=c.check_version
         WHERE e.user_id=? AND e.rating='again' AND c.retired=0 GROUP BY c.id

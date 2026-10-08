@@ -42,7 +42,6 @@ def scheduled(db: Database, user_id: str, card_id: str, reps: int = 3) -> None:
         StoredCard(
             due=now, stability=4.0, difficulty=5.0, reps=reps, lapses=0, state="review", last_review=now
         ),
-        check_hash=db.card(card_id)["check_hash"],
     )
 
 
@@ -101,12 +100,12 @@ def test_upsert_stores_derived_card_data(seeded_db: Database, program_minimal: P
 
 
 def test_upsert_is_idempotent(seeded_db: Database, program_minimal: Program):
-    before = [dict(row) for row in seeded_db.fetch_cards("SELECT * FROM cards ORDER BY id")]
+    before = [dict(row) for row in seeded_db.fetch_all("SELECT * FROM cards ORDER BY id")]
 
     assert seeded_db.upsert_program(program_minimal) == ZERO
     assert seeded_db.upsert_program(program_minimal) == ZERO
 
-    assert [dict(row) for row in seeded_db.fetch_cards("SELECT * FROM cards ORDER BY id")] == before
+    assert [dict(row) for row in seeded_db.fetch_all("SELECT * FROM cards ORDER BY id")] == before
     assert seeded_db.scalar("SELECT count(*) FROM chapters") == 1
     assert seeded_db.scalar("SELECT count(*) FROM lessons") == 2
 
@@ -175,7 +174,7 @@ def test_answer_edit_resets_schedule_for_all_users_keeps_events(
     assert seeded_db.card(CARD)["check_hash"] != old_hash
     assert seeded_db.card(CARD)["check_version"] != old_version
     # History stays, still tagged with the version it was answered against.
-    stored = seeded_db.fetch_cards("SELECT check_version FROM events WHERE card_id=?", (CARD,))
+    stored = seeded_db.fetch_all("SELECT check_version FROM events WHERE card_id=?", (CARD,))
     assert len(stored) == 2
     assert {row["check_version"] for row in stored} == {old_version}
     # Completion is left alone; "open work" is derived later from the events.
@@ -289,7 +288,7 @@ def test_removed_lesson_and_chapter_are_retired(seeded_db: Database, program_min
     assert [chapter["id"] for chapter in seeded_db.chapters()] == ["basics"]
     assert [lesson["id"] for lesson in seeded_db.lessons_of_chapter("basics")] == ["first"]
     assert seeded_db.lessons_of_chapter("extra") == []
-    assert seeded_db.fetch_cards("SELECT id FROM chapters WHERE retired=1")[0]["id"] == "extra"
+    assert seeded_db.fetch_all("SELECT id FROM chapters WHERE retired=1")[0]["id"] == "extra"
     assert seeded_db.lesson("second")["retired"] == 1
     assert seeded_db.scalar("SELECT count(*) FROM cards WHERE retired=0") == 2
 

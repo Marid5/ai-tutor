@@ -131,7 +131,7 @@ class Database:
 
     def list_users(self) -> list[dict[str, Any]]:
         """Accounts for the admin CLI; the password hash is deliberately not included."""
-        rows = self.fetch_cards("SELECT id,username,created_at FROM users ORDER BY created_at, username")
+        rows = self.fetch_all("SELECT id,username,created_at FROM users ORDER BY created_at, username")
         return [dict(row) for row in rows]
 
     def set_password(self, user_id: str, password_hash: str) -> None:
@@ -338,7 +338,7 @@ class Database:
         if not card_ids:
             return {}
         marks = ",".join("?" for _ in card_ids)
-        rows = self.fetch_cards(
+        rows = self.fetch_all(
             f"""SELECT c.*, s.state AS cs_state, s.stability AS cs_stability, s.due AS cs_due
             FROM cards c LEFT JOIN card_state s ON s.card_id=c.id AND s.user_id=?
             WHERE c.id IN ({marks})""",
@@ -370,17 +370,15 @@ class Database:
             ).fetchone()
         return StoredCard(**dict(row))
 
-    def update_state(
-        self, user_id: str, card_id: str, state: StoredCard, check_hash: str | None = None
-    ) -> None:
+    def update_state(self, user_id: str, card_id: str, state: StoredCard) -> None:
         with self._transaction() as conn:
             conn.execute(
                 """INSERT INTO card_state(
-                    user_id,card_id,due,stability,difficulty,reps,lapses,state,last_review,check_hash)
-                VALUES(?,?,?,?,?,?,?,?,?,?)
+                    user_id,card_id,due,stability,difficulty,reps,lapses,state,last_review)
+                VALUES(?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(user_id,card_id) DO UPDATE SET due=excluded.due,stability=excluded.stability,
                 difficulty=excluded.difficulty,reps=excluded.reps,lapses=excluded.lapses,state=excluded.state,
-                last_review=excluded.last_review,check_hash=excluded.check_hash""",
+                last_review=excluded.last_review""",
                 (
                     user_id,
                     card_id,
@@ -391,7 +389,6 @@ class Database:
                     state.lapses,
                     state.state,
                     state.last_review,
-                    check_hash,
                 ),
             )
 
@@ -439,7 +436,7 @@ class Database:
             raise RuntimeError("event insert was ignored without a known idempotency conflict")
 
     def events_between(self, user_id: str, start: str, end: str) -> list[sqlite3.Row]:
-        return self.fetch_cards(
+        return self.fetch_all(
             """SELECT * FROM events WHERE user_id=?
             AND datetime(ts) >= datetime(?) AND datetime(ts) < datetime(?)
             ORDER BY datetime(ts), rowid""",
@@ -447,14 +444,14 @@ class Database:
         )
 
     def events_for_session(self, user_id: str, session_id: str) -> list[sqlite3.Row]:
-        return self.fetch_cards(
+        return self.fetch_all(
             "SELECT rowid AS accepted_order,* FROM events WHERE user_id=? AND session_id=? ORDER BY rowid",
             (user_id, session_id),
         )
 
     def events_for_user(self, user_id: str) -> list[sqlite3.Row]:
         """Accepted learning events in the order the server accepted them."""
-        return self.fetch_cards(
+        return self.fetch_all(
             "SELECT rowid AS accepted_order,* FROM events WHERE user_id=? ORDER BY rowid", (user_id,)
         )
 
@@ -538,7 +535,7 @@ class Database:
 
     def mixed_practice_candidate_cards(self, user_id: str) -> list[sqlite3.Row]:
         """Cards of completed, live lessons that already have a schedule."""
-        return self.fetch_cards(
+        return self.fetch_all(
             """SELECT c.*, l.position AS lesson_position FROM cards c
             JOIN lessons l ON l.id=c.lesson_id
             JOIN user_lesson_state uls ON uls.lesson_id=l.id AND uls.user_id=? AND uls.status='completed'
@@ -549,7 +546,7 @@ class Database:
         )
 
     def review_sessions_of_day(self, user_id: str, day: str) -> list[dict[str, Any]]:
-        rows = self.fetch_cards(
+        rows = self.fetch_all(
             """SELECT * FROM study_sessions WHERE user_id=? AND day_key=? AND mode='scheduled_review'
             ORDER BY slice_index""",
             (user_id, day),
@@ -572,10 +569,10 @@ class Database:
 
     # ------------------------------------------------------------- curriculum
     def chapters(self) -> list[sqlite3.Row]:
-        return self.fetch_cards("SELECT * FROM chapters WHERE retired=0 ORDER BY position")
+        return self.fetch_all("SELECT * FROM chapters WHERE retired=0 ORDER BY position")
 
     def lessons_of_chapter(self, chapter_id: str) -> list[sqlite3.Row]:
-        return self.fetch_cards(
+        return self.fetch_all(
             "SELECT * FROM lessons WHERE chapter_id=? AND retired=0 ORDER BY position", (chapter_id,)
         )
 
@@ -584,17 +581,17 @@ class Database:
         return self._one("SELECT * FROM lessons WHERE id=?", (lesson_id,))
 
     def lesson_cards(self, lesson_id: str) -> list[sqlite3.Row]:
-        return self.fetch_cards(
+        return self.fetch_all(
             "SELECT * FROM cards WHERE lesson_id=? AND retired=0 ORDER BY position", (lesson_id,)
         )
 
     def chapter_cards(self, chapter_id: str) -> list[sqlite3.Row]:
-        return self.fetch_cards(
+        return self.fetch_all(
             "SELECT * FROM cards WHERE chapter_id=? AND retired=0 ORDER BY position", (chapter_id,)
         )
 
     def user_lesson_states(self, user_id: str) -> dict[str, sqlite3.Row]:
-        rows = self.fetch_cards("SELECT * FROM user_lesson_state WHERE user_id=?", (user_id,))
+        rows = self.fetch_all("SELECT * FROM user_lesson_state WHERE user_id=?", (user_id,))
         return {row["lesson_id"]: row for row in rows}
 
     def user_lesson_state(self, user_id: str, lesson_id: str) -> dict[str, Any] | None:
@@ -642,8 +639,8 @@ class Database:
             )
 
     # ------------------------------------------------------------------ utils
-    def fetch_cards(self, query: str, parameters: Iterable[Any] = ()) -> list[sqlite3.Row]:
-        """Run a read-only query and return all rows (also used for non-card tables)."""
+    def fetch_all(self, query: str, parameters: Iterable[Any] = ()) -> list[sqlite3.Row]:
+        """Run a read-only query and return every row."""
         conn = self.connect()
         try:
             return conn.execute(query, tuple(parameters)).fetchall()
@@ -651,11 +648,11 @@ class Database:
             conn.close()
 
     def scalar(self, query: str, parameters: Iterable[Any] = ()) -> Any:
-        rows = self.fetch_cards(query, parameters)
+        rows = self.fetch_all(query, parameters)
         return rows[0][0] if rows else None
 
     def _one(self, query: str, parameters: Iterable[Any] = ()) -> dict[str, Any] | None:
-        rows = self.fetch_cards(query, parameters)
+        rows = self.fetch_all(query, parameters)
         return dict(rows[0]) if rows else None
 
     def program_version(self) -> str:

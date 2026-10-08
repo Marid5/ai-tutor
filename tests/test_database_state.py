@@ -35,16 +35,15 @@ def test_get_state_creates_a_new_card_once(seeded_db: Database):
     assert seeded_db.scalar("SELECT count(*) FROM card_state") == 1
 
 
-def test_update_state_round_trips_and_stores_check_hash(seeded_db: Database):
+def test_update_state_round_trips(seeded_db: Database):
     user = seeded_db.create_user("learner", "hash")
     stored = StoredCard(
         due=TS, stability=3.5, difficulty=4.2, reps=2, lapses=1, state="review", last_review=TS
     )
 
-    seeded_db.update_state(user, "capital-of-france", stored, check_hash="abc")
+    seeded_db.update_state(user, "capital-of-france", stored)
 
     assert seeded_db.get_state(user, "capital-of-france") == stored
-    assert seeded_db.scalar("SELECT check_hash FROM card_state WHERE user_id=?", (user,)) == "abc"
 
 
 def test_reset_card_state_drops_one_schedule(seeded_db: Database):

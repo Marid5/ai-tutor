@@ -118,11 +118,11 @@ def test_delete_user_sessions_except_current(db: Database):
 
     db.delete_user_sessions(ada, except_hash="a2")
 
-    remaining = {row["token_hash"] for row in db.fetch_cards("SELECT token_hash FROM auth_sessions")}
+    remaining = {row["token_hash"] for row in db.fetch_all("SELECT token_hash FROM auth_sessions")}
     assert remaining == {"a2", "g1"}
 
     db.delete_user_sessions(ada)
-    remaining = {row["token_hash"] for row in db.fetch_cards("SELECT token_hash FROM auth_sessions")}
+    remaining = {row["token_hash"] for row in db.fetch_all("SELECT token_hash FROM auth_sessions")}
     assert remaining == {"g1"}
 
 

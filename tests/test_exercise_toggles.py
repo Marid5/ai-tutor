@@ -167,7 +167,7 @@ def test_old_events_do_not_regrade_after_answer_edit(db, tmp_path):
     learner = Learner(db, tmp_path, exercises={"triage": False})
     primary = first_of(learner.start(), CARD, "p1:")
     assert learner.answer(primary, right=False).correct is False  # answered "Lyon" or another lure
-    wrong = db.fetch_cards("SELECT answer FROM events WHERE step_id=?", (primary["id"],))[0]["answer"]
+    wrong = db.fetch_all("SELECT answer FROM events WHERE step_id=?", (primary["id"],))[0]["answer"]
     # The lure the learner picked becomes the right answer of the edited card.
     others = [lure for lure in ["Paris", "Lyon", "Marseille", "Nice"] if lure != wrong]
     learner.reload(
@@ -217,7 +217,7 @@ def test_server_ignores_client_correct_flag(db, tmp_path):
     )
     assert outcome.status == "inserted"
     assert outcome.correct is False
-    stored = db.fetch_cards("SELECT rating, correct FROM events WHERE step_id=?", (primary["id"],))[0]
+    stored = db.fetch_all("SELECT rating, correct FROM events WHERE step_id=?", (primary["id"],))[0]
     assert stored["rating"] == "again"
     assert stored["correct"] == 0
 

@@ -57,7 +57,7 @@ def due_review_cards(
     db: Database, user_id: str, now: datetime, schedule: Schedule, limit: int = REVIEW_QUEUE_SAFETY_LIMIT
 ) -> list[Any]:
     """Every live card due before the current learning day ends, interleaved by category."""
-    rows = db.fetch_cards(
+    rows = db.fetch_all(
         f"""SELECT {CARD_COLUMNS}
         FROM cards c
         JOIN lessons l ON l.id=c.lesson_id
