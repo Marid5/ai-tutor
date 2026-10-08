@@ -11,6 +11,8 @@ import {
  */
 const DIR = '../docs/screenshots';
 const SCHEMES = ['light', 'dark'] as const;
+/** Time spent looking at each step, so the progress screen shows study time. */
+const THINK_MS = 20_000;
 
 test.skip(process.env.SHOTS !== '1', 'set SHOTS=1 to refresh docs/screenshots/');
 
@@ -33,17 +35,50 @@ async function shootBoth(page: Page, name: string) {
 }
 
 /**
+ * The learner looks at the step for THINK_MS before answering. The page clock
+ * jumps ahead without firing timers, so nothing waits in real time.
+ */
+async function think(page: Page) {
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.setSystemTime(now + THINK_MS);
+}
+
+/**
+ * Takes `shot` with the viewport stretched just enough that the bottom edge
+ * (the phone tab bar, or the window on a wide screen) ends below a whole
+ * lesson row instead of cutting one in half.
+ */
+async function withWholeRows(page: Page, shot: () => Promise<void>) {
+  const size = page.viewportSize();
+  if (!size) throw new Error('screenshots need a fixed viewport');
+  const extra = await page.evaluate(() => {
+    const bar = document.querySelector('.tabs');
+    const edge = bar && getComputedStyle(bar).position === 'fixed' ? bar.getBoundingClientRect().top : window.innerHeight;
+    const cut = Array.from(document.querySelectorAll('.chapter-head, .lesson'), row => row.getBoundingClientRect())
+      .find(box => box.top < edge && box.bottom > edge);
+    return cut ? Math.ceil(cut.bottom - edge) : 0;
+  });
+  await page.setViewportSize({ width: size.width, height: size.height + extra });
+  await shot();
+  await page.setViewportSize(size);
+}
+
+/**
  * The first lesson, with one choice missed on purpose so the ladder brings
  * the card back as a cloze; `onChoice` and `onCloze` see those screens before
  * they are answered.
  */
 async function learnFirstLesson(page: Page, steps: StepLog, onChoice?: () => Promise<void>, onCloze?: () => Promise<void>) {
   await page.getByRole('region', { name: 'Next lesson' }).getByRole('button', { name: 'Start lesson' }).click();
-  while ((await steps.current(page)).kind === 'triage') await answerStep(page, steps);
+  while ((await steps.current(page)).kind === 'triage') {
+    await think(page);
+    await answerStep(page, steps);
+  }
 
   const first = await steps.current(page);
   expect(first.kind).toBe('choice');
   await onChoice?.();
+  await think(page);
   await pickOption(page, first, wrongOption(first));
   await expect(verdict(page, 'Not quite')).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
@@ -55,6 +90,7 @@ async function learnFirstLesson(page: Page, steps: StepLog, onChoice?: () => Pro
       clozeSeen = true;
       await onCloze?.();
     }
+    await think(page);
     await answerStep(page, steps);
   }
   expect(clozeSeen, 'the missed card came back as a cloze').toBe(true);
@@ -67,12 +103,14 @@ test('screens for the README', async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   const steps = new StepLog(page);
   await page.emulateMedia({ colorScheme: 'light' });
+  // Before the app loads, so its step timer reads the controllable clock.
+  await page.clock.install();
   await signUp(page);
 
   if (testInfo.project.name === 'desktop') {
     await learnFirstLesson(page, steps);
     await expect(page.getByText('3 of 33 cards ready')).toBeVisible();
-    await shoot(page, 'home-desktop');
+    await withWholeRows(page, () => shoot(page, 'home-desktop'));
     return;
   }
 
@@ -93,10 +131,11 @@ test('screens for the README', async ({ page }, testInfo) => {
 
   await expect(page.getByText('3 of 33 cards ready')).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
-  await shootBoth(page, 'home');
+  await withWholeRows(page, () => shootBoth(page, 'home'));
 
   await tab(page, 'Progress').click();
   await expect(page.getByRole('heading', { level: 1, name: 'Your progress' })).toBeVisible();
   await expect(page.locator('.problem-prompt')).not.toHaveCount(0);
+  await expect(page.locator('.stat-value').getByText(/^[1-9]\d* min$/)).toBeVisible();
   await shootBoth(page, 'progress');
 });
