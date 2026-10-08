@@ -19,5 +19,4 @@ tests/
 frontend/e2e/
 docs/
 .github/
-.superpowers/
 deploy/

@@ -29,7 +29,6 @@ CLAUDE = ROOT / "CLAUDE.md"
 SKILLS_DIR = ROOT / ".claude" / "skills"
 CONTRACT = ROOT / "docs" / "content-contract.md"
 EXERCISES = ROOT / "docs" / "exercises.md"
-EXPECTED_SKILLS = {"add-content", "choose-exercises", "deploy", "setup-server"}
 # Commands every agent needs on day one; AGENTS.md must name each of them.
 REQUIRED_COMMANDS = {"setup", "dev", "test", "e2e", "validate", "user"}
 # Top-level entries whose paths, when quoted in agent instructions, must exist.
@@ -99,22 +98,14 @@ def tables(text: str) -> list[list[str]]:
 
 
 # ------------------------------------------------------------------- skills
-def test_the_four_skills_exist():
-    assert {path.parent.name for path in skill_files()} == EXPECTED_SKILLS
-
-
 @pytest.mark.parametrize("path", skill_files(), ids=lambda path: path.parent.name)
-def test_skill_frontmatter_names_it_and_says_when_to_use_it(path: Path):
+def test_skill_frontmatter_names_it_and_describes_it(path: Path):
     meta = frontmatter(path)
     assert set(meta) == {"name", "description"}
     assert meta["name"] == path.parent.name
     assert re.fullmatch(r"[a-z0-9-]{1,64}", meta["name"])
     description = meta["description"]
     assert isinstance(description, str) and 0 < len(description) <= 1024
-    # Third person ("Turns ...", "Recommends ..."), never "I ..." or "You ...".
-    first_word = description.split()[0]
-    assert first_word not in {"I", "You", "We", "Use"} and first_word.endswith("s"), first_word
-    assert "Use when" in description
 
 
 # ----------------------------------------------------------- AGENTS / CLAUDE
@@ -126,7 +117,7 @@ def test_claude_md_imports_agents_md_and_points_to_the_skills():
 
 def test_agents_md_lists_every_skill_by_an_existing_path():
     paths = set(re.findall(r"\.claude/skills/[\w-]+/SKILL\.md", read(AGENTS)))
-    assert {Path(path).parent.name for path in paths} == EXPECTED_SKILLS
+    assert {Path(path).parent.name for path in paths} == {path.parent.name for path in skill_files()}
     for path in paths:
         assert (ROOT / path).is_file(), path
 

@@ -132,6 +132,6 @@ def test_dockerfile_copy_sources_exist_and_are_not_ignored():
 
 
 def test_dockerignore_keeps_deploy_and_agent_files_out_of_the_image():
-    for name in ("deploy/", ".superpowers/", ".git"):
+    for name in ("deploy/", ".git"):
         assert name in dockerignore_patterns()
         assert is_ignored(name)

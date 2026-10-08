@@ -67,5 +67,6 @@ test('the Review entry point is shut on the day a lesson is learned', async ({ p
   await expect(page.getByRole('button', { name: 'Review Nothing due today' })).toBeDisabled();
 });
 
-// Opening a due review needs a card scheduled for a later day, which a same-day run cannot reach.
-test.fixme('review opens and completes once cards are due', async () => {});
+// The review entry is covered above through its disabled state on the learning day:
+// opening a due review needs a card scheduled for a later day, which a same-day run
+// cannot reach. The review flow itself is covered by the backend tests.

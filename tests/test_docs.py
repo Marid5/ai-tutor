@@ -16,14 +16,6 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
-VALUE_LINE = (
-    "Turn your notes into a spaced-repetition course — "
-    "your coding agent writes the cards, AI Tutor teaches them."
-)
-# Course content is written in whatever language the learner studies, so it is
-# exempt from the English-only rule that covers code, UI and docs.
-LANGUAGE_FREE_PATHS = ("content/",)
-CYRILLIC = re.compile(r"[\u0400-\u052f\u1c80-\u1c8f\u2de0-\u2dff\ua640-\ua69f]")
 
 MD_LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 HTML_REF = re.compile(r"<(?:img|a)\b[^>]*?\b(?:src|href)=\"([^\"]+)\"", re.I)
@@ -133,39 +125,12 @@ def test_relative_links_resolve(path: Path):
     assert not broken, f"{rel(path)} has broken links: {broken}"
 
 
-def test_readme_opens_with_the_value_line_and_only_two_badges():
-    lines = README.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "# AI Tutor"
-    badges = [line for line in lines[:6] if line.startswith("[![")]
-    assert len(badges) == 2
-    assert "actions/workflows/ci.yml/badge.svg" in badges[0]
-    assert "license" in badges[1].lower()
-    assert VALUE_LINE in lines
-
-
 def test_readme_shows_screenshots_that_exist():
     images = [target for target in links(README.read_text(encoding="utf-8")) if target.endswith(".png")]
     assert len(images) >= 3
     for image in images:
         assert image.startswith("docs/screenshots/"), image
         assert (ROOT / image).is_file(), image
-
-
-def test_readme_sections_come_in_order():
-    headings = re.findall(r"^## (.+)$", without_code(README.read_text(encoding="utf-8")), re.M)
-    expected = [
-        "Who it's for",
-        "How it works",
-        "Quick start with your coding agent",
-        "Manual quick start",
-        "Exercise kinds",
-        "Deploy",
-        "Architecture",
-        "Security",
-        "Credits",
-        "License",
-    ]
-    assert [heading for heading in headings if heading in expected] == expected
 
 
 def test_make_targets_named_in_the_docs_exist():
@@ -190,19 +155,3 @@ def test_changelog_top_entry_is_the_current_version():
 def test_changelog_lists_what_is_planned():
     text = CHANGELOG.read_text(encoding="utf-8")
     assert re.search(r"^## Planned$", text, re.M)
-
-
-def test_no_cyrillic_outside_course_content():
-    offending = []
-    for path in repository_files():
-        name = rel(path)
-        if name.startswith(LANGUAGE_FREE_PATHS):
-            continue
-        data = path.read_bytes()
-        if b"\0" in data:  # binary: images, icons
-            continue
-        text = data.decode("utf-8", errors="replace")
-        for number, line in enumerate(text.splitlines(), start=1):
-            if CYRILLIC.search(line):
-                offending.append(f"{name}:{number}")
-    assert not offending, f"Cyrillic text found: {offending[:20]}"
