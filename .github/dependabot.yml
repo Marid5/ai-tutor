@@ -1,14 +1,34 @@
 version: 2
+# Minor and patch updates arrive as one grouped pull request per ecosystem.
+# Major versions change behaviour (scheduling, hashing, test runners) and are
+# planned deliberately — see "Planned" in CHANGELOG.md.
 updates:
   - package-ecosystem: pip
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: "/frontend"
     schedule:
       interval: weekly
+    groups:
+      frontend:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
