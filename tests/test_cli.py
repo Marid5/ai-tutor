@@ -1,4 +1,4 @@
-"""The admin CLI, exercised the way an owner runs it: as a subprocess with env settings."""
+"""The user-management CLI, exercised the way an owner runs it: as a subprocess with env settings."""
 
 import os
 import sqlite3

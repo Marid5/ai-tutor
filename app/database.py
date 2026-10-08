@@ -130,7 +130,7 @@ class Database:
         return self._one("SELECT * FROM users WHERE id=?", (user_id,))
 
     def list_users(self) -> list[dict[str, Any]]:
-        """Accounts for the admin CLI; the password hash is deliberately not included."""
+        """Accounts for the user-management CLI; the password hash is deliberately not included."""
         rows = self.fetch_all("SELECT id,username,created_at FROM users ORDER BY created_at, username")
         return [dict(row) for row in rows]
 

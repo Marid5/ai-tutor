@@ -17,7 +17,7 @@ Most requests here are content work: add a lesson, extend a chapter, choose whic
 | `docs/content-contract.md` | Every content field and rule, and what each kind of edit does to learner progress |
 | `docs/exercises.md` | Exercise kinds, when a card supports each, how a lesson uses them |
 | `scripts/validate_content.py` | The validator behind `make validate` |
-| `app/` | Backend: content loader (`content.py`), learning engine (`steps.py`, `session.py`, `review.py`), HTTP API (`api/`), account CLI (`cli.py`) |
+| `app/` | Backend: content loader (`content.py`), learning engine (`steps.py`, `session.py`, `review.py`), HTTP API (`api/`), user-management CLI (`cli.py`) |
 | `migrations/` | SQLite schema migrations, applied in file-name order |
 | `frontend/` | React + Vite + TypeScript client (`src/screens`, `src/components`) and Playwright tests (`e2e/`) |
 | `tests/` | Backend tests (pytest) |

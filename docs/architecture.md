@@ -11,7 +11,7 @@ flowchart LR
     end
     client["React client<br/>frontend/"] -- "/api/* + session cookie" --> api
     app --> db[("SQLite<br/>data/ai_tutor.db")]
-    cli["Owner CLI<br/>python -m app.cli"] --> db
+    cli["User-management CLI<br/>python -m app.cli"] --> db
 ```
 
 ## Components
@@ -40,7 +40,7 @@ How the exercises, the ladder and readiness behave for a learner is described in
 
 ### SQLite schema
 
-Migrations live in `migrations/` and are applied in file-name order at start-up and by the CLI. The schema has four groups:
+Migrations live in `migrations/` and are applied in file-name order at start-up and by the user-management CLI. The schema has four groups:
 
 | Group | Tables | Notes |
 |---|---|---|
@@ -95,6 +95,6 @@ sequenceDiagram
 
 - **The answer travels with the step.** A step payload includes the answer and note before the learner answers, so the client can show the card's back the moment it is answered without a second request. Grading still happens on the server, and AI Tutor is a self-study tool: a learner who reads the payload only cheats themselves. The trade-off favours a simpler client.
 - **Registration is closed by default.** A deploy is for one person or a small group the owner knows; accounts are created with `python -m app.cli create-user`. `REGISTRATION=open` turns on self-service sign-up, with its own rate limit.
-- **No HTTP admin.** Account management and backups are CLI commands run on the server (`docker compose exec app python -m app.cli ...`). There is no admin endpoint to protect, brute-force or forget to protect.
+- **No HTTP admin.** Account management and backups are user-management CLI commands run on the server (`docker compose exec app python -m app.cli ...`). There is no admin endpoint to protect, brute-force or forget to protect.
 - **SQLite and one process.** The expected scale is a person or a team, not thousands of concurrent users. One file to back up (with an online backup command) beats a database server to run.
 - **Content in git, not in a database UI.** Cards are YAML authored by an agent and reviewed as a diff; the validator, not a form, enforces the rules.

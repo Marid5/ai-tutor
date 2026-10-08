@@ -1,4 +1,4 @@
-"""Owner commands: manage accounts and back up the database.
+"""User-management CLI: manage accounts and back up the database.
 
 Registration is closed by default, so this is how accounts get created. Run it
 as `python -m app.cli ...` (or `make user NAME=ada`); in Docker, prefix it with
@@ -152,7 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m app.cli",
         description=(
-            "Manage AI Tutor accounts and back up the database. "
+            "User-management CLI: manage AI Tutor accounts and back up the database. "
             "The database is chosen by the DATABASE_PATH environment variable. "
             "In Docker, run: docker compose exec app python -m app.cli COMMAND ..."
         ),

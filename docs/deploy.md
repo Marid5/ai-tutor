@@ -44,7 +44,7 @@ Content is baked into the image, so after editing `content/` rebuild: `docker co
 
 1. Install Docker from the official repository and create a `deploy` user for deployments only (membership in the `docker` group is equivalent to root).
 2. Firewall: `ufw` allows 22, 80 and 443, and a `DOCKER-USER` block drops anything else that reaches a container from the public interface, armed with an automatic rollback timer so a wrong rule cannot lock you out.
-3. Clone the repository to `/srv/ai-tutor` with a read-only deploy key, create `.env` from `.env.example` (registration closed, secure cookies, `TRUST_PROXY=true`), give `data/` to uid `10001`, start the app and create your account with the CLI.
+3. Clone the repository to `/srv/ai-tutor` with a read-only deploy key, create `.env` from `.env.example` (registration closed, secure cookies, `TRUST_PROXY=true`), give `data/` to uid `10001`, start the app and create your account with the user-management CLI.
 4. Put Caddy in front, on the host or in a container, from `deploy/Caddyfile.example`. It obtains the certificate and adds HSTS.
 5. Run the post-deploy checks below, then set up automatic deploys.
 

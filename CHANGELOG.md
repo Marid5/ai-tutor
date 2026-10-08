@@ -28,7 +28,7 @@ First public release.
 #### Accounts and security
 
 - Username and password accounts with bcrypt; registration closed by default.
-- Owner CLI (`python -m app.cli`): `create-user`, `reset-password`, `list-users`, `delete-user`, and `backup` with rotation.
+- User-management CLI (`python -m app.cli`): `create-user`, `reset-password`, `list-users`, `delete-user`, and `backup` with rotation.
 - Opaque session tokens stored as SHA-256 hashes in `HttpOnly`, `SameSite=Lax`, `Secure` cookies; sessions revoked on password change, reset and deletion.
 - Rate limits for sign-in, registration and password change, persisted in SQLite; proxy-aware client address resolution.
 - Strict security headers and Content-Security-Policy, request body limits, and static file containment.
@@ -58,10 +58,9 @@ First public release.
 - Distractor suggestions drawn from the same chapter.
 - An exam date per course, with intervals tightened to fit before it.
 - Telegram reminders and study.
-- Payments.
 - An HTTP admin interface.
 - A multilingual interface.
 - Import from Anki.
-- A service worker for offline use and full PWA icons.
+- A service worker for offline use.
 - A setup script that arms and cancels the firewall rollback timer by itself (today a documented manual step).
 - Upgrade of py-fsrs beyond 3.x (4.x/5.x).

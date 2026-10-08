@@ -102,7 +102,7 @@ Settings come from environment variables (`.env` in Docker). [.env.example](.env
 
 ## Architecture
 
-- **Backend:** FastAPI and SQLite in `app/`; the API, the learning engine and an account CLI, with schema migrations in `migrations/`.
+- **Backend:** FastAPI and SQLite in `app/`; the API, the learning engine and a user-management CLI, with schema migrations in `migrations/`.
 - **Engine:** builds every session queue from the answers the server has accepted, grades closed exercises itself, and schedules reviews with [py-fsrs](https://github.com/open-spaced-repetition/py-fsrs).
 - **Content:** YAML in `content/`, loaded and validated at start-up and synced to the database by stable ids, so wording edits keep progress.
 - **Client:** React, Vite and TypeScript in `frontend/`; mobile-first, light and dark themes, no inline scripts.
@@ -114,7 +114,7 @@ More in [docs/architecture.md](docs/architecture.md).
 
 - Static files are served only from inside the client build directory; traversal attempts get the start page, with a regression test.
 - Session tokens are random, sent in an `HttpOnly`, `SameSite=Lax`, `Secure` cookie and stored only as SHA-256 hashes; passwords use bcrypt.
-- Registration is closed by default, and there is no HTTP admin: accounts and backups are managed from the CLI.
+- Registration is closed by default, and there is no HTTP admin: accounts and backups are managed from the user-management CLI.
 - Sign-in is rate limited per client address and per account (failures only), in SQLite, so limits survive a restart.
 - Every response carries a strict Content-Security-Policy with no inline scripts or styles, plus `nosniff`, `DENY` framing and a same-origin referrer policy.
 - Docker publishes the app port on `127.0.0.1` only; the reverse proxy is the single public entry point.
