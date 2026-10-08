@@ -41,7 +41,7 @@ A wrong firewall rule locks everyone out. Before any firewall change: arm the ro
 
 Report each result to the user:
 
-1. `curl -fsS https://<domain>/api/health` answers `"status":"ok"`, and `git_sha` equals `git -C /srv/ai-tutor rev-parse HEAD` on the server.
+1. `curl -fsS https://<domain>/api/health` answers `"status":"ok"`, and `git_sha` equals `sudo -u deploy git -C /srv/ai-tutor rev-parse HEAD` on the server.
 2. From outside the server, `curl -m 5 http://<server-ip>:8000/` fails (timeout or connection refused).
 3. `curl -s --path-as-is https://<domain>/%2e%2e/VERSION` returns the app's HTML start page, never the bare version string.
 4. On the server, `docker ps --format '{{.Names}}\t{{.Ports}}'` shows no `0.0.0.0:` or `[::]:`, except the proxy's 80 and 443 when Caddy runs in a container.

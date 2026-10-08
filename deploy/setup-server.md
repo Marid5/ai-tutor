@@ -42,6 +42,7 @@ Install `ufw` if the image does not have it, and find the public network interfa
 ```bash
 apt-get install -y ufw
 IFACE="$(ip -o route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}')"
+[ -n "$IFACE" ] || echo "Could not detect the external interface: set IFACE=<name> by hand before continuing"
 echo "Public interface: $IFACE"
 ```
 
@@ -124,15 +125,16 @@ In your GitHub repository, open *Settings → Deploy keys → Add deploy key*, p
 Trust GitHub's host key only after comparing it with the fingerprints GitHub publishes (see "GitHub's SSH key fingerprints" in the GitHub documentation, docs.github.com):
 
 ```bash
-ssh-keyscan -t ed25519 github.com > /tmp/github_host_key
-ssh-keygen -lf /tmp/github_host_key
+HOST_KEY="$(mktemp)"
+ssh-keyscan -t ed25519 github.com > "$HOST_KEY"
+ssh-keygen -lf "$HOST_KEY"
 ```
 
 If the printed `SHA256:...` value equals the published ed25519 fingerprint, install it and clone, using the deploy key:
 
 ```bash
-sudo -u deploy sh -c 'cat >> /home/deploy/.ssh/known_hosts' < /tmp/github_host_key
-rm /tmp/github_host_key
+sudo -u deploy sh -c 'cat >> /home/deploy/.ssh/known_hosts' < "$HOST_KEY"
+rm "$HOST_KEY"
 sudo -u deploy GIT_SSH_COMMAND="ssh -i /home/deploy/.ssh/repo_deploy_key -o IdentitiesOnly=yes" \
   git clone git@github.com:YOUR-ACCOUNT/ai-tutor.git /srv/ai-tutor
 sudo -u deploy git -C /srv/ai-tutor config core.sshCommand \
