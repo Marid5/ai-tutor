@@ -14,3 +14,6 @@ __pycache__/
 .ruff_cache/
 frontend/test-results/
 frontend/playwright-report/
+
+# Local agent settings (may contain tokens)
+.claude/settings.local.json
