@@ -4,7 +4,7 @@ Thanks for helping. Bug reports, fixes and focused improvements are welcome; for
 
 ## Setup
 
-Requires Python 3.12, Node.js 22 and `make`.
+Requires Python 3.12, Node.js 22 and `make`. `make setup` looks for `python3.12` on your `PATH`; point it elsewhere with `make setup PYTHON=/path/to/python3.12`.
 
 ```bash
 make setup             # .venv, Python and client dependencies, .env, data/

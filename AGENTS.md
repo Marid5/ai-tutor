@@ -42,7 +42,7 @@ Most requests here are content work: add a lesson, extend a chapter, choose whic
 
 Client checks: `npm --prefix frontend run typecheck` and `npm --prefix frontend test`.
 
-For content work only the validator is needed. If `make setup` cannot finish (for example, npm has no network), a Python 3.12 environment is enough for `make validate` and `make test`: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`.
+For content work only the validator is needed. If `make setup` cannot finish (for example, npm has no network), a Python 3.12 environment is enough for `make validate` and `make test`: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`.
 
 ## Rules
 

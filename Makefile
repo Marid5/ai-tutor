@@ -1,7 +1,11 @@
 .PHONY: setup test lint format validate user build dev serve e2e
 
+# Interpreter for the virtual environment; override with PYTHON=/path/to/python3.12.
+PYTHON ?= python3.12
+
 setup:
-	/opt/homebrew/bin/python3.12 -m venv .venv || python3 -m venv .venv
+	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "Python 3.12 is required; set PYTHON=/path/to/python3.12"; exit 1; }
+	$(PYTHON) -m venv .venv
 	.venv/bin/pip install -r requirements-dev.txt
 	if [ -f frontend/package.json ]; then npm --prefix frontend ci; fi
 	cp -n .env.example .env || true

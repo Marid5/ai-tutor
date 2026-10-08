@@ -48,7 +48,7 @@ Replace `<file>` with the path to your notes, PDF or photo. The agent shows the 
 
 ## Manual quick start
 
-Requires Python 3.12, Node.js 22 and `make`.
+Requires Python 3.12, Node.js 22 and `make`. `make setup` looks for `python3.12` on your `PATH`; point it elsewhere with `make setup PYTHON=/path/to/python3.12`.
 
 ```bash
 make setup           # .venv, Python and client dependencies, .env, data/

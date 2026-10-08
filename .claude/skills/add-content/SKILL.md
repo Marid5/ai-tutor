@@ -13,7 +13,7 @@ Turn material into cards that pass `make validate`, without touching anyone's ex
 
 ## 1. Get a green baseline
 
-1. Run `make validate`. If `.venv` is missing, run `make setup` first; if that fails on the client dependencies, `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt` is enough.
+1. Run `make validate`. If `.venv` is missing, run `make setup` first; if that fails on the client dependencies, `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt` is enough.
 2. The baseline must exit 0. Keep its coverage table and warnings: you compare against them later. If the baseline already fails, stop and report the errors. Do not fix content you were not asked to touch.
 3. Read `content/program.yaml` and every file in `content/chapters/`. Note the chapters, lesson ids, card ids, the exercise switches in effect per chapter, and which facts are already covered.
 
